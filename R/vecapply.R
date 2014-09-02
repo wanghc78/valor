@@ -166,14 +166,28 @@ va_rawVecFun <- function(fun) {
 # A real vectorizatoin function transformer
 # dim: how many dimensions for the current transformation context, a pure runtime
 # Still this function is external facing, user will see the result
-va_vecFun <- function(fDef, dim = 1) {
+va_vecClosure <- function(clos, options = NULL) {
     #TODO: do real transform, currently, just return the original function
-    body <- body(fDef)
-    args <- names(formals(fDef))
-    
-    #should reconstruct the content
-    body(fDef) <- body #quote(x+2)
-    fDef
+    type <- typeof(clos)
+
+    if (type == "closure") {
+        body = body(clos)
+        forms = formals(clos)
+        cntxt <- make.toplevelContext(makeCenv(environment(clos)), options)
+        ncntxt <- make.functionContext(cntxt, forms, body)
+        #add all formals as vecvars
+        ncntxt$env <- addCenvVecvars(ncntxt$env, names(forms))
+        ncntxt$dimvars <- c(ncntxt$dimvars, names(forms)[1]) #note the clos should have at least one form
+        ret <- veccmp(body, ncntxt)
+        body(clos) <- ret[[1]]
+        cat("[va_vecFun: result]"); print(clos)
+        clos
+    }
+    else if (typeof(clos) == "builtin" || type == "special") { 
+        #still need to check, if the function supports vec input. otherwise, return a raw vectorize form
+        clos
+    }
+    else { stop("cannot vectorize a non-function") }
 }
 
 
@@ -388,7 +402,7 @@ getAssignedVar <- function(e) {
     }
 }
 
-findLocals1 <- function(e, shadowed = character(0)) {
+findLocals1 <- function(e, shadowed = characbter(0)) {
     if (typeof(e) == "language") {
         if (typeof(e[[1]]) %in% c("symbol", "character")) {
             v <- as.character(e[[1]])
@@ -502,6 +516,7 @@ getInlineInfo <- function(name, cntxt) {
 ## **** need to explain the structure
 makeCenv <- function(env) {
     structure(list(extra = list(character(0)),
+                   vecvars = list(character(0)),
                     env = env,
                     ftypes = frameTypes(env)),
             class = "compiler_environment")
@@ -513,9 +528,16 @@ addCenvVars <- function(cenv, vars) {
     cenv
 }
 
+## Add vecvars
+addCenvVecvars <- function(cenv, vecvars) {
+    cenv$vecvars[[1]] <- union(cenv$vecvars[[1]], vecvars)
+    cenv
+}
+
 ## Add a new frame to a compiler environment
 addCenvFrame <- function(cenv, vars) {
     cenv$extra <- c(list(character(0)), cenv$extra)
+    cenv$vecvars <- c(list(character(0)), cenv$vecvars)
     cenv$env <- new.env(parent = cenv$env)
     cenv$ftypes <- c("local", cenv$ftypes)
     if (missing(vars))
@@ -572,6 +594,24 @@ findCenvVar <- function(var, cenv) {
         NULL
 }
 
+## Only find a var inside a frame, and report whether it is vectorized.
+## If yes, also return the expand dimension for future use
+findVecvar <- function(var, cntxt) {
+    if (typeof(var) == "symbol")
+        var <- as.character(var)
+    cenv <- cntxt$env
+    info <- findCenvVar(var, cenv)
+    #cat("[findVecvar->findCenvVar]", as.character(info), '\nb'); 
+    if (! is.null(info)) {
+        print(cenv$vecvars[[info$index]])
+        isVec = var %in% cenv$vecvars[[info$index]]
+        list(isVec = isVec) #, dim = cenv$dim[i]
+    } else {
+        NULL #just return NULL
+    }
+}
+
+
 isBaseVar <- function(var, cntxt) {
     info <- getInlineInfo(var, cntxt)
     (! is.null(info) &&
@@ -623,6 +663,7 @@ make.toplevelContext <- function(cenv, options = NULL)
                     suppressUndefined = getCompilerOption("suppressUndefined",
                             options),
                     call = NULL,
+                    dimvars = character(0), #record the primary variables used to build the vec
                     stop = function(msg, cntxt)
                         stop(simpleError(msg, cntxt$call)),
                     warn = function(x, cntxt) cat(paste("Note:", x, "\n"))),
@@ -765,6 +806,7 @@ notifyMultipleSwitchDefaults <- function(ndflt, cntxt)
 ## Recursive compile structure - The entrance of the compilation
 ## e: expr
 ## cntxt: compile context
+## This is the top level visiting function
 veccmp <- function(e, cntxt) {
     if (typeof(e) == "language")
         veccmpCall(e, cntxt)
@@ -780,39 +822,111 @@ veccmp <- function(e, cntxt) {
         veccmpConst(e, cntxt)
 }
 
+# Vectorize the function (symbol or real object)
+# only expand one dimension right now
+# 
+# if fun is a symbol
+#  if the symbol is belong to language symbol, return directly
+#  otherwise return a wrapper va_vecFun(fun) which will trigger a runtime call
+# if fun is a closure, just call the va_vecFun(closure)
+veccmpFun <- function(fun, cntxt) {
+    
+    if (typeof(fun) == 'symbol') {
+        #either return a wrapper, or return the real object
+        name <- as.character(fun)
+        if (name %in% languageFuns) { fun }
+        else {
+            as.call(list(quote(va_vecClosure), fun))
+        }
+    } else if (typeof(fun) == 'closure') {
+        va_vecClosure(fun) #note here vecClosure will only return the closure
+    } else if (typeof(fun) == 'language' && as.character(fun[[1]])== 'function') {
+        va_vecClosure(eval(fun))
+    }
+    else {
+        cntxt$stop(gettext("cannot vec a function that is neither a symbol nor a closure"),
+                cntxt)
+    }
+}
+
+
 veccmpCall <- function(call, cntxt) {
+    cat("[Visiting]Call:", format(call), '\n')
+    
     cntxt <- make.callContext(cntxt, call)
+    
+    isVecSpace <- length(cntxt$dimvars) > 0
+
     fun <- call[[1]]
     args <- call[-1]
     
-    if("lapply" == as.character(fun) && isBaseVar("lapply", cntxt)) {
-        #case 1: if the call is a lapply style
-        cat("[Info]lapply function found in:")
-        print(call)
-        
-        #now start rewrite, 
-        l <-  args[[1]]
-        f <- args[[2]]
-        # no matter which situation, just wrap f with va_vecFun
-        vf <- as.call(list(quote(va_vecFun), f))
-        v <- as.call(list(quote(va_list2vec), l))
-        vcall <- as.call(list(vf, v))
-        #finally change back to the original list
-        as.call(list(quote(va_vec2list), vcall))
+    if (!isVecSpace) {
+        cat("[Not Vec Call transform]\n")
+        #sequential transformation
+        if("lapply" == as.character(fun) && isBaseVar("lapply", cntxt)) {
+            #in this case, the lapply's argument, input maybe another lapply expr or symbol
+            #stop visiting at this point
+            #now start rewrite, 
+            l <-  args[[1]]
+            f <- args[[2]]
+            # no matter which situation, just wrap f with va_vecFun
+            vf <- veccmpFun(f, cntxt)
+            v <- as.call(list(quote(va_list2vec), l))
+            vcall <- as.call(list(vf, v))
+            #finally change back to the original list
+            call <- as.call(list(quote(va_vec2list), vcall))
+        } else {
+            #must visit each args, but not the call
+            for (i in seq_along(args)) {
+                ret <- veccmp(args[[i]], cntxt)
+                args[[i]] = ret[[1]] #note the second one is the dim size
+            }
+            call <- as.call(c(fun, as.list(args)))
+        }
+        list(call, 0L)
     } else {
-        call
+        cat("[Vec Call transform]\n")
+        #in vectorization situation. This will not handle lapply anymore right now
+        # the algorithm, just visit the args, if any dim is larger than 0, 
+        # wrap all with vec data except the 
+        # and vectorize the function.
+        dimsret <- integer(length(args))
+        for (i in seq_along(args)) {
+            ret <- veccmp(args[[i]], cntxt)
+            args[[i]] <- ret[[1]] #note the second one is the dim size
+            dimsret[[i]] <- ret[[2]]
+        }
+        if(any(dimsret)) { #then everyone except dim is arealy should be wrapped as vecdata
+            fun <- veccmpFun(fun, cntxt)
+            refvar <- as.symbol(cntxt$dimvars[1])
+            for (i in seq_along(args)) {
+                if(dimsret[i] == 0) {
+                    args[[i]] = as.call(list(quote(va_repVecData), args[[i]], refvar))
+                }
+            }
+        }
+        call <- as.call(c(fun, as.list(args)))
+        list(call, 1L)
     }
 }
 
 
 veccmpSym <- function(sym, cntxt) {
-    # TODO: insert _vecexpand
-    sym
+    cat("[Visiting]Symbol:", sym, '\n')
+    #try to search this symbol in the context's environment.
+    #If it is a vector var, return dim = 1, otherwise return 0
+    info <- findVecvar(sym, cntxt)
+    if (!is.null(info) && info$isVec) {
+        list(sym, 1L) # a vectorized one
+    } else {
+        list(sym, 0L)  # a scala one
+    }
 }
 
 veccmpConst <- function(val, cntxt) {
-    # TODO: insert _vecexpand
-    val
+    #constant definetely 
+    cat("[Visiting]Constant:", format(val), '\n')
+    list(val, 0L) #the second is the dim of this constant
 }
 
 
@@ -822,5 +936,6 @@ va_compile <- function(e, env = .GlobalEnv, options = NULL) {
     cntxt$env <- addCenvVars(cenv, findLocals(e, cntxt))
     
     #now identify the lapply expression
-    veccmp(e, cntxt)
+    ret <- veccmp(e, cntxt)
+    ret[[1]] #only get the first part
 }
