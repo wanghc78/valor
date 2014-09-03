@@ -603,7 +603,6 @@ findVecvar <- function(var, cntxt) {
     info <- findCenvVar(var, cenv)
     #cat("[findVecvar->findCenvVar]", as.character(info), '\nb'); 
     if (! is.null(info)) {
-        print(cenv$vecvars[[info$index]])
         isVec = var %in% cenv$vecvars[[info$index]]
         list(isVec = isVec) #, dim = cenv$dim[i]
     } else {
@@ -812,6 +811,8 @@ veccmp <- function(e, cntxt) {
         veccmpCall(e, cntxt)
     else if (typeof(e) == "symbol")
         veccmpSym(e, cntxt)
+    else if (typeof(e) == "pairlist")
+        veccmpFormals(e, cntxt)
     else if (typeof(e) == "bytecode")
         cntxt$stop(gettext("cannot vec compile byte code literals in code"),
                 cntxt)
@@ -849,9 +850,13 @@ veccmpFun <- function(fun, cntxt) {
     }
 }
 
+veccmpFormals <- function(forms, cntxt) {
+    cat("[Visiting]Formals:", names(forms), " <-> ", as.character(forms), '\n')
+    list(forms, 0L) #not change forms right now. maybe need vectorize the binding values
+}
 
 veccmpCall <- function(call, cntxt) {
-    cat("[Visiting]Call:", format(call), '\n')
+    cat("[Visiting]Call:", format(call))
     
     cntxt <- make.callContext(cntxt, call)
     
@@ -861,7 +866,7 @@ veccmpCall <- function(call, cntxt) {
     args <- call[-1]
     
     if (!isVecSpace) {
-        cat("[Not Vec Call transform]\n")
+        cat(" ==> Scalar Space Transform!\n")
         #sequential transformation
         if("lapply" == as.character(fun) && isBaseVar("lapply", cntxt)) {
             #in this case, the lapply's argument, input maybe another lapply expr or symbol
@@ -885,7 +890,7 @@ veccmpCall <- function(call, cntxt) {
         }
         list(call, 0L)
     } else {
-        cat("[Vec Call transform]\n")
+        cat(" ==> Vector Space Transform!\n")
         #in vectorization situation. This will not handle lapply anymore right now
         # the algorithm, just visit the args, if any dim is larger than 0, 
         # wrap all with vec data except the 
@@ -921,6 +926,7 @@ veccmpSym <- function(sym, cntxt) {
     } else {
         list(sym, 0L)  # a scala one
     }
+    
 }
 
 veccmpConst <- function(val, cntxt) {
@@ -929,6 +935,8 @@ veccmpConst <- function(val, cntxt) {
     list(val, 0L) #the second is the dim of this constant
 }
 
+
+#Top level interface to va_opt an expression
 
 va_compile <- function(e, env = .GlobalEnv, options = NULL) {
     cenv <- makeCenv(env)
@@ -939,3 +947,22 @@ va_compile <- function(e, env = .GlobalEnv, options = NULL) {
     ret <- veccmp(e, cntxt)
     ret[[1]] #only get the first part
 }
+
+#Top level interface to va_opt an function, the function body should be transformed
+va_cmpfun <- function(f, options = NULL) {
+    type <- typeof(f)
+    if (type == "closure") {
+        body = body(f)
+        forms = formals(f)
+        cntxt <- make.toplevelContext(makeCenv(environment(f)), options)
+        ncntxt <- make.functionContext(cntxt, forms, body)
+        
+        ret <- veccmp(body, ncntxt)
+        body(f) <- ret[[1]]
+        f
+    }
+    else if (typeof(f) == "builtin" || type == "special")
+        f
+    else stop("cannot compile a non-function")    
+}
+

@@ -17,3 +17,11 @@ eval(ve)
 
 e1 <- quote(lapply(aList, function(x) { x + 1 }))
 ve1 <- va_compile(e1)
+
+
+#The third case
+test <- function () {
+    aList <- list(1,2,3,4,5)
+    aFun <- function(x) { x + 1 }
+    lapply(aList, aFun)
+}
