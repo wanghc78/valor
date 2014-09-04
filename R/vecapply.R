@@ -803,6 +803,14 @@ notifyMultipleSwitchDefaults <- function(ndflt, cntxt)
 
 ###### Vec Compiler Specific Code #######
 
+
+## Utility functions for AST manupulation
+
+#The only way to get a missing argument
+# http://stackoverflow.com/questions/20904827/the-representation-of-an-empty-argument-in-a-call
+EmptySymbol <- function() (quote(f(,)))[[2]]
+
+
 ## Recursive compile structure - The entrance of the compilation
 ## e: expr
 ## cntxt: compile context
@@ -824,6 +832,14 @@ veccmp <- function(e, cntxt) {
         veccmpConst(e, cntxt)
 }
 
+
+BuiltinVecFuns <- list(
+        c = "cbind",
+        sum = "rowSums"
+        
+        )
+
+
 # Vectorize the function (symbol or real object)
 # only expand one dimension right now
 # 
@@ -836,7 +852,11 @@ veccmpFun <- function(fun, cntxt) {
     if (typeof(fun) == 'symbol') {
         #either return a wrapper, or return the real object
         name <- as.character(fun)
-        if (name %in% languageFuns) { fun }
+        if (name %in% languageFuns) { 
+            fun
+        } else if(!is.null(BuiltinVecFuns[[name]])) {
+            as.symbol(BuiltinVecFuns[[name]])
+        }
         else {
             as.call(list(quote(va_vecClosure), fun))
         }
@@ -915,6 +935,36 @@ veccmpCall <- function(call, cntxt) {
         } else if (fun_name == "assign" || fun_name == "delayedAssign") {
             cntxt$stop(gettext("cannot vec an assign or delayedAssign function"),
                     cntxt)
+        } else if (fun_name == "[") { #e.g. x[1] ('['(x,1) )or x[1,2]
+            dimsret <- integer(length(args))
+            for (i in seq_along(args)) {
+                ret <- veccmp(args[[i]], cntxt)
+                args[[i]] <- ret[[1]] #note the second one is the dim size
+                dimsret[[i]] <- ret[[2]]
+            }
+            
+            if(dimsret[[1]]) { #val is vectorized
+                #then all indices cannot be vectorized
+                if(sum(dimsret) > 1L) {
+                    cntxt$stop(gettext("cannot vec an index call with vec-val and any index is vectorized"),
+                            cntxt)
+                } 
+                # now try to insert an empty index in [[2]]
+               args[3:(length(args)+1)] <- args[2:length(args)]
+               args[[2]] <- EmptySymbol()
+               vecFlag <- 1L
+            
+            } else { #not vectorized, relatively simple
+                #then at most one index can be vectorized
+                if(sum(dimsret) > 1L) {
+                    cntxt$stop(gettext("cannot vec an index call with non-vec-val but more than one index is vectorized"),
+                            cntxt)
+                } else if(sum(dimsret) == 1L) {
+                    vecFlag <- 1L
+                } else {
+                    vecFlag <- 0L
+                }
+            }
         } else {
             #in vectorization situation. This will not handle lapply anymore right now
             # the algorithm, just visit the args, if any dim is larger than 0, 
@@ -947,6 +997,7 @@ veccmpCall <- function(call, cntxt) {
 
 veccmpSym <- function(sym, cntxt) {
     cat("[Visiting]Symbol:", sym, '\n')
+    if(identical(sym, EmptySymbol())) { return(sym) }
     #try to search this symbol in the context's environment.
     #If it is a vector var, return dim = 1, otherwise return 0
     info <- findVecvar(sym, cntxt)

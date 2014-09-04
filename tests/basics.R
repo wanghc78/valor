@@ -35,3 +35,11 @@ test2 <- function() {
     }
     lapply(aList, aFun)
 }
+
+grad.func <- function(yx) {
+    y <- yx[1]
+    x <- c(1, yx[2])  # add 1 to est interception
+    error <- (sum(x *theta) - y)
+    delta <- error * x
+    return(delta)
+}
