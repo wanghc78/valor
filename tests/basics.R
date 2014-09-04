@@ -25,3 +25,13 @@ test <- function () {
     aFun <- function(x) { x + 1 }
     lapply(aList, aFun)
 }
+
+
+test2 <- function() {
+    aList <- list(1,2,3,4,5)
+    aFun <- function(x) { 
+        y <- x + 1
+        y * 2
+    }
+    lapply(aList, aFun)
+}

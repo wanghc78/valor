@@ -176,7 +176,7 @@ va_vecClosure <- function(clos, options = NULL) {
         cntxt <- make.toplevelContext(makeCenv(environment(clos)), options)
         ncntxt <- make.functionContext(cntxt, forms, body)
         #add all formals as vecvars
-        ncntxt$env <- addCenvVecvars(ncntxt$env, names(forms))
+        addCenvVecvars(ncntxt$env, names(forms))
         ncntxt$dimvars <- c(ncntxt$dimvars, names(forms)[1]) #note the clos should have at least one form
         ret <- veccmp(body, ncntxt)
         body(clos) <- ret[[1]]
@@ -516,7 +516,7 @@ getInlineInfo <- function(name, cntxt) {
 ## **** need to explain the structure
 makeCenv <- function(env) {
     structure(list(extra = list(character(0)),
-                   vecvars = list(character(0)),
+                   vecvarenv = new.env(),
                     env = env,
                     ftypes = frameTypes(env)),
             class = "compiler_environment")
@@ -530,14 +530,15 @@ addCenvVars <- function(cenv, vars) {
 
 ## Add vecvars
 addCenvVecvars <- function(cenv, vecvars) {
-    cenv$vecvars[[1]] <- union(cenv$vecvars[[1]], vecvars)
-    cenv
+    for(vecvar in vecvars) {
+        assign(vecvar, TRUE, envir=cenv$vecvarenv) #mark as true
+    }
 }
 
 ## Add a new frame to a compiler environment
 addCenvFrame <- function(cenv, vars) {
     cenv$extra <- c(list(character(0)), cenv$extra)
-    cenv$vecvars <- c(list(character(0)), cenv$vecvars)
+    cenv$vecvarenv <- new.env(parent = cenv$vecvarenv) #note use environment object to record
     cenv$env <- new.env(parent = cenv$env)
     cenv$ftypes <- c("local", cenv$ftypes)
     if (missing(vars))
@@ -601,9 +602,9 @@ findVecvar <- function(var, cntxt) {
         var <- as.character(var)
     cenv <- cntxt$env
     info <- findCenvVar(var, cenv)
-    #cat("[findVecvar->findCenvVar]", as.character(info), '\nb'); 
+    # cat("[findVecvar->findCenvVar]", as.character(info), '\n'); 
     if (! is.null(info)) {
-        isVec = var %in% cenv$vecvars[[info$index]]
+        isVec = exists(var, envir= cenv$vecvarenv, inherits=FALSE)
         list(isVec = isVec) #, dim = cenv$dim[i]
     } else {
         NULL #just return NULL
@@ -891,27 +892,55 @@ veccmpCall <- function(call, cntxt) {
         list(call, 0L)
     } else {
         cat(" ==> Vector Space Transform!\n")
-        #in vectorization situation. This will not handle lapply anymore right now
-        # the algorithm, just visit the args, if any dim is larger than 0, 
-        # wrap all with vec data except the 
-        # and vectorize the function.
-        dimsret <- integer(length(args))
-        for (i in seq_along(args)) {
-            ret <- veccmp(args[[i]], cntxt)
-            args[[i]] <- ret[[1]] #note the second one is the dim size
-            dimsret[[i]] <- ret[[2]]
-        }
-        if(any(dimsret)) { #then everyone except dim is arealy should be wrapped as vecdata
-            fun <- veccmpFun(fun, cntxt)
-            refvar <- as.symbol(cntxt$dimvars[1])
+        
+        #will distinguish it is an assign.
+        # If yes, transfor RHS, 
+        #    If RHS is vec, add the LHS into vector list
+        #
+        # If no. normal transform
+    
+        fun_name <- as.character(fun)
+        if (fun_name == '=' || fun_name == '<-') {
+            lhs <- getAssignedVar(call)
+            
+            #transform RHS
+            ret <- veccmp(args[[2]], cntxt)
+            if(ret[[2]]) { #now the LHS should be added into the vecVars
+                vecFlag <- 1L
+                addCenvVecvars(cntxt$env, lhs)
+            } else {
+                vecFlag <- 0L
+            }
+            args[[2]] <- ret[[1]] #in all cases, the lhs will not be transformed
+        } else if (fun_name == "assign" || fun_name == "delayedAssign") {
+            cntxt$stop(gettext("cannot vec an assign or delayedAssign function"),
+                    cntxt)
+        } else {
+            #in vectorization situation. This will not handle lapply anymore right now
+            # the algorithm, just visit the args, if any dim is larger than 0, 
+            # wrap all with vec data except the 
+            # and vectorize the function.
+            dimsret <- integer(length(args))
             for (i in seq_along(args)) {
-                if(dimsret[i] == 0) {
-                    args[[i]] = as.call(list(quote(va_repVecData), args[[i]], refvar))
+                ret <- veccmp(args[[i]], cntxt)
+                args[[i]] <- ret[[1]] #note the second one is the dim size
+                dimsret[[i]] <- ret[[2]]
+            }
+            if(any(dimsret)) { #then everyone except dim is arealy should be wrapped as vecdata
+                fun <- veccmpFun(fun, cntxt)
+                refvar <- as.symbol(cntxt$dimvars[1])
+                for (i in seq_along(args)) {
+                    if(dimsret[i] == 0L) {
+                        args[[i]] <- as.call(list(quote(va_repVecData), args[[i]], refvar))
+                    }
                 }
+                vecFlag <- 1L
+            } else {
+                vecFlag <- 0L
             }
         }
         call <- as.call(c(fun, as.list(args)))
-        list(call, 1L)
+        list(call, vecFlag)
     }
 }
 
