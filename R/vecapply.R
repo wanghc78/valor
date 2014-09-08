@@ -123,10 +123,14 @@ va_list2vec <- function(l) {
     #then e1 is atomic type
     #only support v as vector or matrix
     tmp <- simplify2array(l)
+    # if is.list(tmp) { warning, and return the list }
     if(is.null(dim(tmp))) {
         tmp
-    } else { #matrix
+    } else if(is.matrix(tmp)) { #matrix
         t(tmp)
+    } else { #multidim array
+        tmp_dim_len <- length(dim(tmp))
+        aperm(tmp, c(tmp_dim_len, 1:(tmp_dim_len-1)))
     }
 }
 
@@ -188,6 +192,18 @@ va_vecClosure <- function(clos, options = NULL) {
         clos
     }
     else { stop("cannot vectorize a non-function") }
+}
+
+# Target function of Reduce('+', aList), Apply(sum, ...)
+va_reduceSum <- function(v) {
+  if(is.array(v)) { colSums(v) }
+  else { sum(v) }
+}
+
+# Target function of Apply(mean,...)
+va_reduceMean <- function(v) {
+  if(is.array(v)) { colMeans(v) }
+  else { mean(v) }
 }
 
 
