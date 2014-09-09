@@ -43,3 +43,12 @@ grad.func <- function(yx) {
     delta <- error * x
     return(delta)
 }
+
+
+test3 <- function() {
+    aList <- list(1,2,3,4,5)
+    if(True){
+        bList <- "abcd"
+    }
+}
+

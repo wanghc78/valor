@@ -532,7 +532,8 @@ getInlineInfo <- function(name, cntxt) {
 ## **** need to explain the structure
 makeCenv <- function(env) {
     structure(list(extra = list(character(0)),
-                   vecvarenv = new.env(),
+                    vecvarenv = new.env(),
+                    localdefs = list(), #local Basic Block's conservertive bindings
                     env = env,
                     ftypes = frameTypes(env)),
             class = "compiler_environment")
@@ -555,6 +556,7 @@ addCenvVecvars <- function(cenv, vecvars) {
 addCenvFrame <- function(cenv, vars) {
     cenv$extra <- c(list(character(0)), cenv$extra)
     cenv$vecvarenv <- new.env(parent = cenv$vecvarenv) #note use environment object to record
+    cenv$localdefs <- list() #not use any parent's information
     cenv$env <- new.env(parent = cenv$env)
     cenv$ftypes <- c("local", cenv$ftypes)
     if (missing(vars))
@@ -855,6 +857,8 @@ BuiltinVecFuns <- list(
         
         )
 
+#Used for building the simple Basic Block's defs binding calculation
+ControlFlowFuns <- c("for", "if", "repeat", "while", "return", "switch")
 
 # Vectorize the function (symbol or real object)
 # only expand one dimension right now
@@ -889,27 +893,32 @@ veccmpFun <- function(fun, cntxt) {
 
 veccmpFormals <- function(forms, cntxt) {
     cat("[Visiting]Formals:", names(forms), " <-> ", as.character(forms), '\n')
-    list(forms, 0L) #not change forms right now. maybe need vectorize the binding values
+    list(forms, 0L, FALSE, cntxt$env$localdefs) #not change forms right now. maybe need vectorize the binding values
 }
 
 veccmpCall <- function(call, cntxt) {
     cat("[Visiting]Call:", format(call))
     
     cntxt <- make.callContext(cntxt, call)
-    
+    localdefs <- cntxt$env$localdefs #get the accumulated pre local defs
     isVecSpace <- length(cntxt$dimvars) > 0
 
-    fun <- call[[1]]
+    fun <- call[[1]]; fun_name <- as.character(fun)
     args <- call[-1]
+    
+    isControlFun <- fun_name %in% ControlFlowFuns
+    isVecData <- FALSE #only lapply will change it
     
     if (!isVecSpace) {
         cat(" ==> Scalar Space Transform!\n")
         #sequential transformation
-        if("lapply" == as.character(fun) && isBaseVar("lapply", cntxt)) {
+        if("lapply" == fun_name && isBaseVar("lapply", cntxt) && length(args) == 2) {
             #in this case, the lapply's argument, input maybe another lapply expr or symbol
             #stop visiting at this point
             #now start rewrite, 
-            l <-  args[[1]]
+            ret <-  veccmp(args[[1]], cntxt)
+            l <- ret[[1]]
+            localdefs <- ret[[4]] #update local context
             f <- args[[2]]
             # no matter which situation, just wrap f with va_vecFun
             vf <- veccmpFun(f, cntxt)
@@ -917,15 +926,44 @@ veccmpCall <- function(call, cntxt) {
             vcall <- as.call(list(vf, v))
             #finally change back to the original list
             call <- as.call(list(quote(va_vec2list), vcall))
-        } else {
+            isVecData <- TRUE
+        } else if(fun_name == "<-" || fun_name == "=") {
+            #only handle simple case
+            lhs <- getAssignedVar(call)
+            ret <- veccmp(args[[2]], cntxt)
+            rhs <- ret[[1]]
+            localdefs <- ret[[4]]
+            localdefs[[lhs]] = rhs #add one binding
+            call <- as.call(c(fun, args[[1]], rhs))
+            
+        } else if(fun_name == "assign" || fun_name == "delayedAssign") {
+            #only handle simple case
+            if(length(args) != 2 || !is.character(args[[1]]) || length(args[[1]]) != 1){
+                cntxt$stop(gettext("cannot handle binding of complex assign or delayedAssign function"),
+                        cntxt)
+            }
+            lhs <- args[[1]]
+            ret <- veccmp(args[[2]], cntxt) #the expr
+            rhs <-ret[[1]]
+            localdefs <- ref[[4]]
+            localdefs[[lhs]] = rhs
+            call <- as.call(c(fun, args[[1]], rhs))
+        }
+        else { #other general function, not control
             #must visit each args, but not the call
             for (i in seq_along(args)) {
                 ret <- veccmp(args[[i]], cntxt)
                 args[[i]] = ret[[1]] #note the second one is the dim size
+                if(!isControlFun){
+                    localdefs <- ret[[4]]
+                    cntxt$env$localdefs = localdefs
+                }
             }
             call <- as.call(c(fun, as.list(args)))
+            if(isControlFun) { localdefs <- list()}
         }
-        list(call, 0L)
+        print(localdefs)
+        list(call, 0L, isVecData, localdefs)
     } else {
         cat(" ==> Vector Space Transform!\n")
         
@@ -934,27 +972,42 @@ veccmpCall <- function(call, cntxt) {
         #    If RHS is vec, add the LHS into vector list
         #
         # If no. normal transform
-    
-        fun_name <- as.character(fun)
         if (fun_name == '=' || fun_name == '<-') {
             lhs <- getAssignedVar(call)
             
             #transform RHS
             ret <- veccmp(args[[2]], cntxt)
+            localdefs <- ret[[4]] #update local context
             if(ret[[2]]) { #now the LHS should be added into the vecVars
                 vecFlag <- 1L
                 addCenvVecvars(cntxt$env, lhs)
             } else {
                 vecFlag <- 0L
             }
+            localdefs[[lhs]] = ret[[1]]
             args[[2]] <- ret[[1]] #in all cases, the lhs will not be transformed
         } else if (fun_name == "assign" || fun_name == "delayedAssign") {
-            cntxt$stop(gettext("cannot vec an assign or delayedAssign function"),
+            if(length(args) != 2 || !is.character(args[[1]]) || length(args[[1]]) != 1){
+                cntxt$stop(gettext("cannot vec an assign or delayedAssign function"),
                     cntxt)
+            }
+            lhs <- args[[1]]
+            ret <- veccmp(args[[2]], cntxt)
+            localdefs <- ret[[4]] #update local context
+            if(ret[[2]]) { #now the LHS should be added into the vecVars
+                vecFlag <- 1L
+                addCenvVecvars(cntxt$env, lhs)
+            } else {
+                vecFlag <- 0L
+            }
+            localdefs[[lhs]] = ret[[1]]
+            args[[2]] <- ret[[1]] #in all cases, the lhs will not be transformed
         } else if (fun_name == "[") { #e.g. x[1] ('['(x,1) )or x[1,2]
             dimsret <- integer(length(args))
             for (i in seq_along(args)) {
                 ret <- veccmp(args[[i]], cntxt)
+                localdefs <- ret[[4]] #update local context
+                cntxt$env$localdefs <- localdefs
                 args[[i]] <- ret[[1]] #note the second one is the dim size
                 dimsret[[i]] <- ret[[2]]
             }
@@ -991,7 +1044,12 @@ veccmpCall <- function(call, cntxt) {
                 ret <- veccmp(args[[i]], cntxt)
                 args[[i]] <- ret[[1]] #note the second one is the dim size
                 dimsret[[i]] <- ret[[2]]
+                if(!isControlFun){
+                    localdefs <- ret[[4]]
+                    cntxt$env$localdefs = localdefs
+                }
             }
+            if(isControlFun) { localdefs <- list()}
             if(any(dimsret)) { #then everyone except dim is arealy should be wrapped as vecdata
                 fun <- veccmpFun(fun, cntxt)
                 refvar <- as.symbol(cntxt$dimvars[1])
@@ -1006,7 +1064,8 @@ veccmpCall <- function(call, cntxt) {
             }
         }
         call <- as.call(c(fun, as.list(args)))
-        list(call, vecFlag)
+        print(localdefs)
+        list(call, vecFlag, isVecData, localdefs)
     }
 }
 
@@ -1018,9 +1077,9 @@ veccmpSym <- function(sym, cntxt) {
     #If it is a vector var, return dim = 1, otherwise return 0
     info <- findVecvar(sym, cntxt)
     if (!is.null(info) && info$isVec) {
-        list(sym, 1L) # a vectorized one
+        list(sym, 1L, FALSE, cntxt$env$localdefs) # a vectorized one
     } else {
-        list(sym, 0L)  # a scala one
+        list(sym, 0L, FALSE, cntxt$env$localdefs)  # a scala one
     }
     
 }
@@ -1028,7 +1087,7 @@ veccmpSym <- function(sym, cntxt) {
 veccmpConst <- function(val, cntxt) {
     #constant definetely 
     cat("[Visiting]Constant:", format(val), '\n')
-    list(val, 0L) #the second is the dim of this constant
+    list(val, 0L, FALSE, cntxt$env$localdefs) #the second is the dim of this constant
 }
 
 
