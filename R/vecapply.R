@@ -196,6 +196,7 @@ va_vecClosure <- function(clos, options = NULL) {
 
 # Target function of Reduce('+', aList), Apply(sum, ...)
 va_reduceSum <- function(v) {
+  if(is.list(v)) {Reduce('+', v)} #just for safe
   if(is.array(v)) { colSums(v) }
   else { sum(v) }
 }
@@ -828,6 +829,14 @@ notifyMultipleSwitchDefaults <- function(ndflt, cntxt)
 # http://stackoverflow.com/questions/20904827/the-representation-of-an-empty-argument-in-a-call
 EmptySymbol <- function() (quote(f(,)))[[2]]
 
+#input ret[[4]], 
+#return if ret[[3]] is true, then insert list2vec wrapper
+#otherwise 
+getRetVal <- function(ret) {
+    if(ret[[3]]) as.call(c(quote(va_vec2list), ret[[1]])) 
+    else ret[[1]]
+}
+
 
 ## Recursive compile structure - The entrance of the compilation
 ## e: expr
@@ -917,26 +926,69 @@ veccmpCall <- function(call, cntxt) {
             #stop visiting at this point
             #now start rewrite, 
             ret <-  veccmp(args[[1]], cntxt)
-            l <- ret[[1]]
+            l <- getRetVal(ret)
             localdefs <- ret[[4]] #update local context
             f <- args[[2]]
             # no matter which situation, just wrap f with va_vecFun
             vf <- veccmpFun(f, cntxt)
             v <- as.call(list(quote(va_list2vec), l))
-            vcall <- as.call(list(vf, v))
-            #finally change back to the original list
-            call <- as.call(list(quote(va_vec2list), vcall))
+            call <- as.call(list(vf, v))
             isVecData <- TRUE
+        } else if(fun_name == "Reduce" && isBaseVar("Reduce", cntxt) 
+                && args[[1]] == '+' #only support Reduce add
+                && (length(args) == 2 || length(args) == 3 && args[[3]] == 0)) {
+           #no need transform args[[1]]
+           #transform args[[2]]
+           ret <- veccmp(args[[2]], cntxt) 
+           l <- getRetVal(ret) #may be wrapped 
+           localdefs <- ret[[4]] #update local context
+           vecval <- NULL
+           #case 1. l is a symbol and bound to an expression and the expression is DelayedAssign with list
+           if(typeof(l) == 'symbol') {
+               listExpr = localdefs[[as.character(l)]]
+               if(!is.null(listExpr) && typeof(listExpr) == "language"
+                  && as.character(listExpr[[1]]) == "va_vec2list") {
+                  vecval = listExpr[[2]] #should be a symbol with .va. prefix
+               }
+               
+           }
+           #case 2. l is just a vec2list, 
+           if(typeof(l) == "language" && as.character(l[[1]]) == "va_vec2list") {
+               vecval = l[[2]]
+           }
+           
+           if(is.null(vecval)) {
+               call <- as.call(c(fun, '+', l))
+           } else {
+               call <- as.call(c(quote(va_reduceSum), vecval))
+               #replace with va_reduceSum(vecval)
+           }
+            
         } else if(fun_name == "<-" || fun_name == "=") {
             #only handle simple case
+            #the police is if the ret[[3]] is TRUE, then we need create an wrapper
+            #  { .va.left <- noWrapVector, change the assign to delayedAssign}
+            
             lhs <- getAssignedVar(call)
             ret <- veccmp(args[[2]], cntxt)
-            rhs <- ret[[1]]
+            rhs <- getRetVal(ret)
             localdefs <- ret[[4]]
-            localdefs[[lhs]] = rhs #add one binding
-            call <- as.call(c(fun, args[[1]], rhs))
-            
-        } else if(fun_name == "assign" || fun_name == "delayedAssign") {
+            if (ret[[3]]) { 
+                #create a temp variable
+                tmpVarName <- paste(".va", lhs, sep=".") #.va.lhs name
+                tmpAssignStmt <- as.call(c(quote(`<-`), as.symbol(tmpVarName), ret[[1]]))
+                delayAssignRHS <- as.call(c(quote(va_vec2list), as.symbol(tmpVarName)))
+                delayAssignStmt <- as.call(c(quote(delayedAssign), lhs, delayAssignRHS))
+                #finally the wrapper "{"
+                call <- as.call(c(quote(`{`), tmpAssignStmt, delayAssignStmt))
+                #and the binding is 
+                localdefs[[lhs]] <- delayAssignRHS
+            } else {
+                localdefs[[lhs]] <- rhs #add one binding
+                call <- as.call(c(fun, args[[1]], rhs))
+            }
+        } else if(fun_name == "assign" && isBaseVar("assign", cntxt)
+                  || fun_name == "delayedAssign" && isBaseVar("delayedAssign", cntxt)) {
             #only handle simple case
             if(length(args) != 2 || !is.character(args[[1]]) || length(args[[1]]) != 1){
                 cntxt$stop(gettext("cannot handle binding of complex assign or delayedAssign function"),
@@ -944,7 +996,7 @@ veccmpCall <- function(call, cntxt) {
             }
             lhs <- args[[1]]
             ret <- veccmp(args[[2]], cntxt) #the expr
-            rhs <-ret[[1]]
+            rhs <-getRetVal(ret)
             localdefs <- ref[[4]]
             localdefs[[lhs]] = rhs
             call <- as.call(c(fun, args[[1]], rhs))
@@ -953,7 +1005,7 @@ veccmpCall <- function(call, cntxt) {
             #must visit each args, but not the call
             for (i in seq_along(args)) {
                 ret <- veccmp(args[[i]], cntxt)
-                args[[i]] = ret[[1]] #note the second one is the dim size
+                args[[i]] = getRetVal(ret) #note the second one is the dim size
                 if(!isControlFun){
                     localdefs <- ret[[4]]
                     cntxt$env$localdefs = localdefs
@@ -962,7 +1014,6 @@ veccmpCall <- function(call, cntxt) {
             call <- as.call(c(fun, as.list(args)))
             if(isControlFun) { localdefs <- list()}
         }
-        print(localdefs)
         list(call, 0L, isVecData, localdefs)
     } else {
         cat(" ==> Vector Space Transform!\n")
@@ -984,9 +1035,10 @@ veccmpCall <- function(call, cntxt) {
             } else {
                 vecFlag <- 0L
             }
-            localdefs[[lhs]] = ret[[1]]
-            args[[2]] <- ret[[1]] #in all cases, the lhs will not be transformed
-        } else if (fun_name == "assign" || fun_name == "delayedAssign") {
+            localdefs[[lhs]] = getRetVal(ret)
+            args[[2]] <- getRetVal(ret) #in all cases, the lhs will not be transformed
+        } else if (fun_name == "assign" && isBaseVar("assign", cntxt)
+                || fun_name == "delayedAssign" && isBaseVar("delayedAssign", cntxt)) {
             if(length(args) != 2 || !is.character(args[[1]]) || length(args[[1]]) != 1){
                 cntxt$stop(gettext("cannot vec an assign or delayedAssign function"),
                     cntxt)
@@ -1000,15 +1052,15 @@ veccmpCall <- function(call, cntxt) {
             } else {
                 vecFlag <- 0L
             }
-            localdefs[[lhs]] = ret[[1]]
-            args[[2]] <- ret[[1]] #in all cases, the lhs will not be transformed
+            localdefs[[lhs]] = getRetVal(ret)
+            args[[2]] <- getRetVal(ret) #in all cases, the lhs will not be transformed
         } else if (fun_name == "[") { #e.g. x[1] ('['(x,1) )or x[1,2]
             dimsret <- integer(length(args))
             for (i in seq_along(args)) {
                 ret <- veccmp(args[[i]], cntxt)
                 localdefs <- ret[[4]] #update local context
                 cntxt$env$localdefs <- localdefs
-                args[[i]] <- ret[[1]] #note the second one is the dim size
+                args[[i]] <- getRetVal(ret) #note the second one is the dim size
                 dimsret[[i]] <- ret[[2]]
             }
             
@@ -1042,7 +1094,7 @@ veccmpCall <- function(call, cntxt) {
             dimsret <- integer(length(args))
             for (i in seq_along(args)) {
                 ret <- veccmp(args[[i]], cntxt)
-                args[[i]] <- ret[[1]] #note the second one is the dim size
+                args[[i]] <- getRetVal(ret) #note the second one is the dim size
                 dimsret[[i]] <- ret[[2]]
                 if(!isControlFun){
                     localdefs <- ret[[4]]
@@ -1064,7 +1116,6 @@ veccmpCall <- function(call, cntxt) {
             }
         }
         call <- as.call(c(fun, as.list(args)))
-        print(localdefs)
         list(call, vecFlag, isVecData, localdefs)
     }
 }

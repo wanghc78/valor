@@ -44,11 +44,34 @@ grad.func <- function(yx) {
     return(delta)
 }
 
-
+#test var binding
 test3 <- function() {
     aList <- list(1,2,3,4,5)
     if(True){
         bList <- "abcd"
     }
 }
+
+#test Reduce('+', lapply(aFun))
+test4 <- function() {
+    aList <- list(1,2,3,4,5)
+    aFun <- function(x) { 
+        y <- x + 1
+        y * 2
+    }
+    Reduce('+', lapply(aList, aFun))
+}
+
+#test Reduce
+test5 <- function() {
+    aList <- list(1,2,3,4,5)
+    aFun <- function(x) { 
+        y <- x + 1
+        y * 2
+    }
+    outList <- lapply(aList, aFun)
+    Reduce('+', outList)
+}
+
+
 
