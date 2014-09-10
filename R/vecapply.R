@@ -837,6 +837,72 @@ getRetVal <- function(ret) {
     else ret[[1]]
 }
 
+#input a list. If it is not a symobl, just add the wrapper
+#if it is a symbol gen
+# { if(! exists(".va.listVal", inherits = FALSE) || !identical(.vasrc.listVal, listVal)) {
+#      .va.listVal <- va_list2vec(listVal)
+#      .vasrc.listVal <- listVal
+#   }
+#   .va.listVal
+# }
+#
+getVecVal <- function(listVal) {
+    if(is.symbol(listVal)) {
+        listVal_name <- as.character(listVal)
+        vecValName <- paste(".va", listVal_name, sep='.')
+        vecValSym <- as.symbol(vecValName)
+        vecSrcSym <- as.symbol(paste(".vasrc", listVal_name, sep='.'))
+        ret <- quote({
+                    if(! exists(".va.listVal", inherits = FALSE) || !identical(.vasrc.listVal, listVal) ) {
+                        .va.listVal <- va_list2vec(listVal)
+                        .vasrc.listVal <- listVal
+                    }
+                    .va.listVal
+                }
+                )
+        #now directly modify the quote's AST
+        ret[[2]][[2]][[2]][[2]][[2]] <- vecValName
+        ret[[2]][[2]][[3]][[2]][[2]] <- vecSrcSym
+        ret[[2]][[2]][[3]][[2]][[3]] <- listVal
+        ret[[2]][[3]][[2]][[2]] <- vecValSym
+        ret[[2]][[3]][[2]][[3]][[2]] <- listVal
+        ret[[2]][[3]][[3]][[2]] <-  vecSrcSym
+        ret[[2]][[3]][[3]][[3]] <- listVal
+        ret[[3]] <- vecValSym
+        ret
+    } else {
+        as.call(list(c(va_list2vec), listVal))   
+    }
+}
+
+getVecClosure <- function(listVal) {
+    if(is.symbol(listVal)) {
+        listVal_name <- as.character(listVal)
+        vecValName <- paste(".va", listVal_name, sep='.')
+        vecValSym <- as.symbol(vecValName)
+        vecSrcSym <- as.symbol(paste(".vasrc", listVal_name, sep='.'))
+        ret <- quote({
+                    if(! exists(".va.listVal", inherits = FALSE) || !identical(.vasrc.listVal, listVal) ) {
+                        .va.listVal <- va_vecClosure(listVal)
+                        .vasrc.listVal <- listVal
+                    }
+                    .va.listVal
+                }
+        )
+        #now directly modify the quote's AST
+        ret[[2]][[2]][[2]][[2]][[2]] <- vecValName
+        ret[[2]][[2]][[3]][[2]][[2]] <- vecSrcSym
+        ret[[2]][[2]][[3]][[2]][[3]] <- listVal
+        ret[[2]][[3]][[2]][[2]] <- vecValSym
+        ret[[2]][[3]][[2]][[3]][[2]] <- listVal
+        ret[[2]][[3]][[3]][[2]] <-  vecSrcSym
+        ret[[2]][[3]][[3]][[3]] <- listVal
+        ret[[3]] <- vecValSym
+        ret
+    } else {
+        as.call(list(c(va_vecClosure), listVal))   
+    }
+}
 
 ## Recursive compile structure - The entrance of the compilation
 ## e: expr
@@ -887,7 +953,7 @@ veccmpFun <- function(fun, cntxt) {
             as.symbol(BuiltinVecFuns[[name]])
         }
         else {
-            as.call(list(quote(va_vecClosure), fun))
+            getVecClosure(fun)
         }
     } else if (typeof(fun) == 'closure') {
         va_vecClosure(fun) #note here vecClosure will only return the closure
@@ -931,7 +997,7 @@ veccmpCall <- function(call, cntxt) {
             f <- args[[2]]
             # no matter which situation, just wrap f with va_vecFun
             vf <- veccmpFun(f, cntxt)
-            v <- as.call(list(quote(va_list2vec), l))
+            v <- getVecVal(l)
             call <- as.call(list(vf, v))
             isVecData <- TRUE
         } else if(fun_name == "Reduce" && isBaseVar("Reduce", cntxt) 
