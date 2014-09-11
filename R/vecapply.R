@@ -630,6 +630,15 @@ findVecvar <- function(var, cntxt) {
     }
 }
 
+isVecVar <- function(var, cntxt) {
+    info <- findVecvar(var, cntxt)
+    if (!is.null(info) && info$isVec) {
+        TRUE
+    } else {
+        FALSE
+    }
+}
+
 
 isBaseVar <- function(var, cntxt) {
     info <- getInlineInfo(var, cntxt)
@@ -1090,19 +1099,38 @@ veccmpCall <- function(call, cntxt) {
         #
         # If no. normal transform
         if (fun_name == '=' || fun_name == '<-') {
-            lhs <- getAssignedVar(call)
+            #should handle lhs is a symbol or lhs is a call. e.g. x[1]
+            if(!is.symbol(args[[1]])) {
+                #should transform the lhs
+                ret <- veccmp(args[[1]], cntxt)
+                localdefs <- ret[[4]] #update local context
+                cntxt$env$localdefs <- localdefs
+                args[[1]] <- ret[[1]]
+            } 
             
             #transform RHS
             ret <- veccmp(args[[2]], cntxt)
             localdefs <- ret[[4]] #update local context
-            if(ret[[2]]) { #now the LHS should be added into the vecVars
-                vecFlag <- 1L
-                addCenvVecvars(cntxt$env, lhs)
+            cntxt$env$localdefs <- localdefs
+            
+            vecFlag <- ret[[2]] #from the assign
+            args[[2]] <- getRetVal(ret) 
+            #now build the link if required
+            lhs <- getAssignedVar(call)
+            if(is.symbol(args[[1]])) { #lhs is a call
+
+                localdefs[[lhs]] = args[[2]] #note here the link is built with the wrapper
+                cntxt$env$localdefs <- localdefs
+                if(vecFlag) { addCenvVecvars(cntxt$env, lhs) }
             } else {
-                vecFlag <- 0L
+                # handle a speical case, the rhs is vecFlag = FALSE, but lhs var is a vector
+                if(!vecFlag && isVecVar(lhs, cntxt)) {
+                    refvar <- as.symbol(cntxt$dimvars[1])
+                    args[[2]] <- as.call(list(quote(va_repVecData), args[[2]], refvar))
+                    vecFlag <- 1L
+                }
             }
-            localdefs[[lhs]] = getRetVal(ret)
-            args[[2]] <- getRetVal(ret) #in all cases, the lhs will not be transformed
+
         } else if (fun_name == "assign" && isBaseVar("assign", cntxt)
                 || fun_name == "delayedAssign" && isBaseVar("delayedAssign", cntxt)) {
             if(length(args) != 2 || !is.character(args[[1]]) || length(args[[1]]) != 1){
@@ -1112,6 +1140,7 @@ veccmpCall <- function(call, cntxt) {
             lhs <- args[[1]]
             ret <- veccmp(args[[2]], cntxt)
             localdefs <- ret[[4]] #update local context
+            cntxt$env$localdefs <- localdefs
             if(ret[[2]]) { #now the LHS should be added into the vecVars
                 vecFlag <- 1L
                 addCenvVecvars(cntxt$env, lhs)
@@ -1119,8 +1148,10 @@ veccmpCall <- function(call, cntxt) {
                 vecFlag <- 0L
             }
             localdefs[[lhs]] = getRetVal(ret)
+            cntxt$env$localdefs <- localdefs
             args[[2]] <- getRetVal(ret) #in all cases, the lhs will not be transformed
-        } else if (fun_name == "[") { #e.g. x[1] ('['(x,1) )or x[1,2]
+        } else if (fun_name == "[") { 
+            #e.g. x[1] ('['(x,1) )or x[1,2]
             dimsret <- integer(length(args))
             for (i in seq_along(args)) {
                 ret <- veccmp(args[[i]], cntxt)
@@ -1151,6 +1182,16 @@ veccmpCall <- function(call, cntxt) {
                 } else {
                     vecFlag <- 0L
                 }
+            }
+        } else if (fun_name == "{") {
+            #vector space, { function call only consider the last arg's result a vecFlag's result
+            vecFlag <- 0L #by default it is sequential
+            for (i in seq_along(args)) {
+                ret <- veccmp(args[[i]], cntxt)
+                args[[i]] <- getRetVal(ret) #note the second one is the dim size
+                vecFlag <- ret[[2]]
+                localdefs <- ret[[4]]
+                cntxt$env$localdefs = localdefs
             }
         } else {
             #in vectorization situation. This will not handle lapply anymore right now
