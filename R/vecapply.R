@@ -940,6 +940,8 @@ BuiltinVecFuns <- list(
         sum = "rowSums"
         
         )
+#These function by default support replication expansion. So no need do manu repExpand        
+ImplicitRepFuns <- c("+", "-", "*", "/", "%/%","^", "%%", ">", ">=", "<", "<=", "!=", "==")
 
 #Used for building the simple Basic Block's defs binding calculation
 ControlFlowFuns <- c("for", "if", "repeat", "while", "return", "switch")
@@ -1193,7 +1195,53 @@ veccmpCall <- function(call, cntxt) {
                 localdefs <- ret[[4]]
                 cntxt$env$localdefs = localdefs
             }
-        } else {
+        } else if (fun_name == "if" && isBaseVar("if", cntxt)) {
+            #control flow basics.
+            # algorithm. transform cond. 
+            #if isVec(cond) -> transform (trueStmt), false(stmt). should be scalar. otherwise stop
+            #if notVec(cond) -> transform trueStmt, falseStmt. if any isVec, wrap the other one and return.
+            vecFlag <- 0L
+            condRet <- veccmp(args[[1]], cntxt)
+            localdefs <- condRet[[4]]
+            cntxt$env$localdefs = localdefs
+            trueRet <- veccmp(args[[2]], cntxt)
+            localdefs <- trueRet[[4]]
+            cntxt$env$localdefs = localdefs
+            falseRet <- veccmp(args[[3]], cntxt)
+            localdefs <- falseRet[[4]]
+            cntxt$env$localdefs = localdefs
+            
+            if(condRet[[2]]) { #condition is vectorized
+                #change to ifelse function call
+                fun <-quote(ifelse)
+                args[[1]] <- condRet[[1]]
+                args[[2]] <- trueRet[[1]]
+                args[[3]] <- falseRet[[1]]
+                vecFlag <- 1L
+            } else {
+                #if is istill if
+                args[[1]] <- condRet[[1]]
+                refvar <- as.symbol(cntxt$dimvars[1])
+                if(trueRet[[2]]) {
+                    vecFlag <- 1L
+                    args[[2]] <- trueRet[[1]]
+                    if(falseRet[[2]]) {
+                        args[[3]] <- falseRet[[1]]
+                    } else { #span false
+                        args[[3]] <- as.call(list(quote(va_repVecData), falseRet[[1]], refvar))
+                    }
+                } else {
+                    args[[3]] <- falseRet[[1]]
+                    if(falseRet[[2]]){
+                        vecFlag <- 1L
+                        args[[2]] <- as.call(list(quote(va_repVecData), trueRet[[1]], refvar))
+                    } else {
+                        args[[2]] <- trueRet[[1]]
+                    }
+                }
+            }
+        }
+        else {
             #in vectorization situation. This will not handle lapply anymore right now
             # the algorithm, just visit the args, if any dim is larger than 0, 
             # wrap all with vec data except the 
@@ -1209,7 +1257,9 @@ veccmpCall <- function(call, cntxt) {
                 }
             }
             if(isControlFun) { localdefs <- list()}
-            if(any(dimsret)) { #then everyone except dim is arealy should be wrapped as vecdata
+            
+            vecFlag <- as.integer(any(dimsret))
+            if(vecFlag && !fun_name %in% ImplicitRepFuns) { #then everyone except dim is arealy should be wrapped as vecdata
                 fun <- veccmpFun(fun, cntxt)
                 refvar <- as.symbol(cntxt$dimvars[1])
                 for (i in seq_along(args)) {
@@ -1217,10 +1267,7 @@ veccmpCall <- function(call, cntxt) {
                         args[[i]] <- as.call(list(quote(va_repVecData), args[[i]], refvar))
                     }
                 }
-                vecFlag <- 1L
-            } else {
-                vecFlag <- 0L
-            }
+            } 
         }
         call <- as.call(c(fun, as.list(args)))
         list(call, vecFlag, isVecData, localdefs)

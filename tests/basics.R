@@ -73,5 +73,10 @@ test5 <- function() {
     Reduce('+', outList)
 }
 
-
+#test if else transform
+test6 <- function(x) {
+    if(x) { y} else { x}
+    
+    if(y) { x} else { 1}
+}
 
