@@ -1305,7 +1305,7 @@ va_compile <- function(e, env = .GlobalEnv, options = NULL) {
     
     #now identify the lapply expression
     ret <- veccmp(e, cntxt)
-    ret[[1]] #only get the first part
+    getRetVal(ret) #Still need insert wrapper if needed
 }
 
 #Top level interface to va_opt an function, the function body should be transformed
