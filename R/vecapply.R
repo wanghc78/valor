@@ -2,6 +2,12 @@
 ###############################################################################
 
 
+## Name convention
+## va_*: all external exposure functions, including runtime functions and compiler user interface
+## small character started camelCase names: compiler internal function names
+##   veccmp*: Used for vectorization compiler
+## Large character started CamelCase names: data structures used by compiler functions
+
 ############## Runtime functions ##############
 # All VecApply runtime functions (exported) has a prefix "va_"
 
@@ -855,7 +861,10 @@ getRetVal <- function(ret) {
 #   .va.listVal
 # }
 #
-getVecVal <- function(listVal) {
+# Hanle a scalar function in the similar way except the wrapper is va_vecClosure
+
+getVecVal <- function(listVal, isData = TRUE) {
+    transfun <- if(isData) {quote(va_list2vec) } else { quote(va_vecClosure) }
     if(is.symbol(listVal)) {
         listVal_name <- as.character(listVal)
         vecValName <- paste(".va", listVal_name, sep='.')
@@ -868,55 +877,34 @@ getVecVal <- function(listVal) {
                     }
                     .va.listVal
                 }
-                )
-        #now directly modify the quote's AST
-        ret[[2]][[2]][[2]][[2]][[2]] <- vecValName
-        ret[[2]][[2]][[3]][[2]][[2]] <- vecSrcSym
-        ret[[2]][[2]][[3]][[2]][[3]] <- listVal
-        ret[[2]][[3]][[2]][[2]] <- vecValSym
-        ret[[2]][[3]][[2]][[3]][[2]] <- listVal
-        ret[[2]][[3]][[3]][[2]] <-  vecSrcSym
-        ret[[2]][[3]][[3]][[3]] <- listVal
-        ret[[3]] <- vecValSym
-        ret
-    } else {
-        as.call(list(c(va_list2vec), listVal))   
-    }
-}
-
-getVecClosure <- function(listVal) {
-    if(is.symbol(listVal)) {
-        listVal_name <- as.character(listVal)
-        vecValName <- paste(".va", listVal_name, sep='.')
-        vecValSym <- as.symbol(vecValName)
-        vecSrcSym <- as.symbol(paste(".vasrc", listVal_name, sep='.'))
-        ret <- quote({
-                    if(! exists(".va.listVal", inherits = FALSE) || !identical(.vasrc.listVal, listVal) ) {
-                        .va.listVal <- va_vecClosure(listVal)
-                        .vasrc.listVal <- listVal
-                    }
-                    .va.listVal
-                }
         )
         #now directly modify the quote's AST
         ret[[2]][[2]][[2]][[2]][[2]] <- vecValName
         ret[[2]][[2]][[3]][[2]][[2]] <- vecSrcSym
         ret[[2]][[2]][[3]][[2]][[3]] <- listVal
         ret[[2]][[3]][[2]][[2]] <- vecValSym
+        ret[[2]][[3]][[2]][[3]][[1]] <- transfun
         ret[[2]][[3]][[2]][[3]][[2]] <- listVal
         ret[[2]][[3]][[3]][[2]] <-  vecSrcSym
         ret[[2]][[3]][[3]][[3]] <- listVal
         ret[[3]] <- vecValSym
         ret
     } else {
-        as.call(list(c(va_vecClosure), listVal))   
+        as.call(list(transfun, listVal))   
     }
 }
 
 ## Recursive compile structure - The entrance of the compilation
 ## e: expr
 ## cntxt: compile context
-## This is the top level visiting function
+## This is the top level visiting function. The value returned is a list of 4
+## ret[[1]] the transformed object
+## ret[[2]] The object is belong to the vector world or scalar world
+##    0: scalar world; 1: vector with 1 dim; 2: vector with two dim space
+## ret[[3]] boolean: the object is transformed into vector representation
+##    we may need to add va_vec2list to the result if the usage of ret[[1]] is original space
+## ret[[4]] the local variable binding relationship. It's a list
+##    Need to track the binding in a single basic block. 
 veccmp <- function(e, cntxt) {
     if (typeof(e) == "language")
         veccmpCall(e, cntxt)
@@ -934,7 +922,8 @@ veccmp <- function(e, cntxt) {
         veccmpConst(e, cntxt)
 }
 
-
+# Mapping low dim built-in functions into high dim built-in functions
+# It only lists functions that low dim and high dim are different 
 BuiltinVecFuns <- list(
         c = "cbind",
         sum = "rowSums"
@@ -964,11 +953,12 @@ veccmpFun <- function(fun, cntxt) {
             as.symbol(BuiltinVecFuns[[name]])
         }
         else {
-            getVecClosure(fun)
+            getVecVal(fun, FALSE) #get the wrapper va_vecClosure() with runtime binding
         }
     } else if (typeof(fun) == 'closure') {
         va_vecClosure(fun) #note here vecClosure will only return the closure
     } else if (typeof(fun) == 'language' && as.character(fun[[1]])== 'function') {
+        # It's a static input function object, so just get the object and do compiling time binding
         va_vecClosure(eval(fun))
     }
     else {
@@ -977,16 +967,40 @@ veccmpFun <- function(fun, cntxt) {
     }
 }
 
+veccmpSym <- function(sym, cntxt) {
+    cat("[Visiting]Symbol:", sym, '\n')
+    if(identical(sym, EmptySymbol())) { return(list(sym, 0L, FALSE, cntxt$env$localdefs)) }
+    #try to search this symbol in the context's environment.
+    #If it is a vector var, return dim = 1, otherwise return 0
+    info <- findVecvar(sym, cntxt)
+    if (!is.null(info) && info$isVec) {
+        list(sym, 1L, FALSE, cntxt$env$localdefs) # a vectorized one
+    } else {
+        list(sym, 0L, FALSE, cntxt$env$localdefs)  # a scala one
+    }
+    
+}
+
+veccmpConst <- function(val, cntxt) {
+    #constant definetely 
+    cat("[Visiting]Constant:", format(val), '\n')
+    list(val, 0L, FALSE, cntxt$env$localdefs) #the second is the dim of this constant
+}
+
 veccmpFormals <- function(forms, cntxt) {
     cat("[Visiting]Formals:", names(forms), " <-> ", as.character(forms), '\n')
     list(forms, 0L, FALSE, cntxt$env$localdefs) #not change forms right now. maybe need vectorize the binding values
 }
 
+
+#There are basically two types of compile call actions
+#  In scalar space: identify lapply, and transform it into direct function call
+#  In the vector space, follow the formal's def-use chain, transform all operations into vector form
 veccmpCall <- function(call, cntxt) {
     cat("[Visiting]Call:", format(call))
     
     cntxt <- make.callContext(cntxt, call)
-    localdefs <- cntxt$env$localdefs #get the accumulated pre local defs
+    localdefs <- NULL # cntxt$env$localdefs #get the accumulated pre local defs
     isVecSpace <- length(cntxt$dimvars) > 0
 
     fun <- call[[1]]; fun_name <- as.character(fun)
@@ -1008,9 +1022,9 @@ veccmpCall <- function(call, cntxt) {
             f <- args[[2]]
             # no matter which situation, just wrap f with va_vecFun
             vf <- veccmpFun(f, cntxt)
-            v <- getVecVal(l)
+            v <- getVecVal(l, TRUE)
             call <- as.call(list(vf, v))
-            isVecData <- TRUE
+            isVecData <- TRUE #the only place change the list rep into vec rep
         } else if(fun_name == "Reduce" && isBaseVar("Reduce", cntxt) 
                 && args[[1]] == '+' #only support Reduce add
                 && (length(args) == 2 || length(args) == 3 && args[[3]] == 0)) {
@@ -1085,11 +1099,13 @@ veccmpCall <- function(call, cntxt) {
                 args[[i]] = getRetVal(ret) #note the second one is the dim size
                 if(!isControlFun){
                     localdefs <- ret[[4]]
-                    cntxt$env$localdefs = localdefs
+                    cntxt$env$localdefs = localdefs #should pass localdefs to the next call
                 }
             }
             call <- as.call(c(fun, as.list(args)))
-            if(isControlFun) { localdefs <- list()}
+            #clean the localdefs because of the contro flow
+            #TODO: a better way is to do localdefs merge. if there are different binding, remove that binding
+            if(isControlFun) { localdefs <- list()} 
         }
         list(call, 0L, isVecData, localdefs)
     } else {
@@ -1259,7 +1275,8 @@ veccmpCall <- function(call, cntxt) {
             if(isControlFun) { localdefs <- list()}
             
             vecFlag <- as.integer(any(dimsret))
-            if(vecFlag && !fun_name %in% ImplicitRepFuns) { #then everyone except dim is arealy should be wrapped as vecdata
+            #&& !fun_name %in% ImplicitRepFuns
+            if(vecFlag) { #then everyone except dim is arealy should be wrapped as vecdata
                 fun <- veccmpFun(fun, cntxt)
                 refvar <- as.symbol(cntxt$dimvars[1])
                 for (i in seq_along(args)) {
@@ -1275,28 +1292,7 @@ veccmpCall <- function(call, cntxt) {
 }
 
 
-veccmpSym <- function(sym, cntxt) {
-    cat("[Visiting]Symbol:", sym, '\n')
-    if(identical(sym, EmptySymbol())) { return(sym) }
-    #try to search this symbol in the context's environment.
-    #If it is a vector var, return dim = 1, otherwise return 0
-    info <- findVecvar(sym, cntxt)
-    if (!is.null(info) && info$isVec) {
-        list(sym, 1L, FALSE, cntxt$env$localdefs) # a vectorized one
-    } else {
-        list(sym, 0L, FALSE, cntxt$env$localdefs)  # a scala one
-    }
-    
-}
-
-veccmpConst <- function(val, cntxt) {
-    #constant definetely 
-    cat("[Visiting]Constant:", format(val), '\n')
-    list(val, 0L, FALSE, cntxt$env$localdefs) #the second is the dim of this constant
-}
-
-
-#Top level interface to va_opt an expression
+############### Client Interface of the compiler ###################
 
 va_compile <- function(e, env = .GlobalEnv, options = NULL) {
     cenv <- makeCenv(env)
@@ -1305,7 +1301,7 @@ va_compile <- function(e, env = .GlobalEnv, options = NULL) {
     
     #now identify the lapply expression
     ret <- veccmp(e, cntxt)
-    getRetVal(ret) #Still need insert wrapper if needed
+    getRetVal(ret) #Still need insefrt wrapper if needed
 }
 
 #Top level interface to va_opt an function, the function body should be transformed
