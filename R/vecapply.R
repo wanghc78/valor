@@ -935,6 +935,8 @@ ImplicitRepFuns <- c("+", "-", "*", "/", "%/%","^", "%%", ">", ">=", "<", "<=", 
 #Used for building the simple Basic Block's defs binding calculation
 ControlFlowFuns <- c("for", "if", "repeat", "while", "return", "switch")
 
+
+
 # Vectorize the function (symbol or real object)
 # only expand one dimension right now
 # 
@@ -1275,12 +1277,15 @@ veccmpCall <- function(call, cntxt) {
             if(isControlFun) { localdefs <- list()}
             
             vecFlag <- as.integer(any(dimsret))
-            #&& !fun_name %in% ImplicitRepFuns
-            if(vecFlag) { #then everyone except dim is arealy should be wrapped as vecdata
+            if(vecFlag) { #then every operand whose dims is scalar should be wrapped as vecdata
                 fun <- veccmpFun(fun, cntxt)
                 refvar <- as.symbol(cntxt$dimvars[1])
                 for (i in seq_along(args)) {
-                    if(dimsret[i] == 0L) {
+                    #This is an optimization. If the args[[i]] is a scalar, and the fun is a math operator, then no need expand
+                    if(dimsret[i] == 0L &&
+                       (  !fun_name %in% ImplicitRepFuns
+                        || !is.atomic(args[[i]])
+                        || length(args[[i]]) != 1L)) {
                         args[[i]] <- as.call(list(quote(va_repVecData), args[[i]], refvar))
                     }
                 }
