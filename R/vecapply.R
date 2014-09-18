@@ -844,6 +844,68 @@ notifyMultipleSwitchDefaults <- function(ndflt, cntxt)
 # http://stackoverflow.com/questions/20904827/the-representation-of-an-empty-argument-in-a-call
 EmptySymbol <- function() (quote(f(,)))[[2]]
 
+
+# Find an expression's all symbol reference
+findExprSymbols <- function(e, cntxt) {
+    if (typeof(e) == "language") {
+        syms <- list()
+        for(i in seq_along(e)) { syms <- union(syms, findExprSymbols(e[[i]], cntxt)) }
+        syms
+    }
+    else if (typeof(e) == "symbol") {
+        list(as.character(e))
+    }
+    else if (typeof(e) == "pairlist") {
+        #formals
+        syms <- list()
+        for(i in seq_along(e)) { 
+            if(EmptySymbol() != e[[i]]) {
+                syms <- union(syms, findExprSymbols(e[[i]], cntxt)) 
+            }
+        }
+        syms
+    }
+    else if (typeof(e) == "bytecode") {
+        library(compiler)
+        dbe <- invisible(disassemble(e))
+        syms <- list()
+        for(const in dbe[[3]]){
+            if(typeof(const) == "symbol") {
+                syms <- c(syms, as.character(const))
+            }
+        }
+        syms
+    }
+    else if (typeof(e) == "promise")
+        cntxt$stop(gettext("cannot vec compile promise literals in code"),
+                cntxt)
+}
+
+findExprVecVarUse <- function(e, cntxt) {
+    syms <- findExprSymbols(e, cntxt)
+    #check each of them in the vec var enviroment, decide the usage
+    vsyms <- list()
+    for(var in syms) {
+        if(exists(var, envir= cntxt$env$vecvarenv, inherits=FALSE)) {
+            vsyms <- c(vsyms, as.symbol(var))
+        }        
+    }
+    vsyms
+}
+
+wrapExprToFun <- function(formSyms, bodyExpr) {
+    template <- quote(function(a)b)
+    formList <- list()
+    for(sym in formSyms) {
+        formList[[as.character(sym)]] <- EmptySymbol()
+    }
+    
+    template[[2]] <- as.pairlist(formList)
+    template[[3]] <- bodyExpr
+    template
+}
+
+
 #input ret[[4]], 
 #return if ret[[3]] is true, then insert list2vec wrapper
 #otherwise 
@@ -935,7 +997,8 @@ ImplicitRepFuns <- c("+", "-", "*", "/", "%/%","^", "%%", ">", ">=", "<", "<=", 
 #Used for building the simple Basic Block's defs binding calculation
 ControlFlowFuns <- c("for", "if", "repeat", "while", "return", "switch")
 
-
+#Unsupported Funcs that cannot be vectorized
+UnsupportedFuns <- c(".Internal", ".External")
 
 # Vectorize the function (symbol or real object)
 # only expand one dimension right now
@@ -1112,13 +1175,32 @@ veccmpCall <- function(call, cntxt) {
         list(call, 0L, isVecData, localdefs)
     } else {
         cat(" ==> Vector Space Transform!\n")
-        
+        #tmp<-findExprVecVarUse(call, cntxt)
         #will distinguish it is an assign.
         # If yes, transfor RHS, 
         #    If RHS is vec, add the LHS into vector list
         #
         # If no. normal transform
-        if (fun_name == '=' || fun_name == '<-') {
+        if (fun_name %in% UnsupportedFuns) {
+            #unsupported functions, then first need to check the vector symbol usage of the expression
+            #then wrapper it as a function, with a mapply
+            cat("==> Wrapp unsupported functions", fun_name, "\n")
+            vecvars <- findExprVecVarUse(call, cntxt)
+            if(length(vecvars) > 0) {
+                #build the function, with the whole call
+                wrapfun <- wrapExprToFun(vecvars, call)
+                
+                #build the mapply
+                fun<- quote(mapply)
+                #now wrap vectors to vec2list
+                for(i in seq_along(vecvars)) {
+                    vecvars[[i]] <- as.call(c(quote(va_vec2list), vecvars[[i]]))
+                }
+                args<- c(wrapfun, vecvars)
+                vecFlag <- 1L
+                #return the mapply.                
+            } 
+        } else if (fun_name == '=' || fun_name == '<-') {
             #should handle lhs is a symbol or lhs is a call. e.g. x[1]
             if(!is.symbol(args[[1]])) {
                 #should transform the lhs

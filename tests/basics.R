@@ -128,3 +128,9 @@ test6 <- function(x) {
 }
 
 va_vecClosure(test6)
+
+
+test7 <- function() {
+    dists <- lapply(pts, dist.func)
+    ids <- lapply(dists, which.min) 
+}
