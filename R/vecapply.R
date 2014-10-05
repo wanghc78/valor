@@ -33,7 +33,7 @@ getRetVal <- function(ret) {
 #
 # Hanle a scalar function in the similar way except the wrapper is va_vecClosure
 
-getVecVal <- function(listVal, isData = TRUE) {
+genVecObjectNode <- function(listVal, isData = TRUE) {
     transfun <- if(isData) {quote(va_list2vec) } else { quote(va_vecClosure) }
     if(is.symbol(listVal)) {
         listVal_name <- as.character(listVal)
@@ -64,6 +64,21 @@ getVecVal <- function(listVal, isData = TRUE) {
     }
 }
 
+# input: aList is the list from a symbol or an expression
+tryGetVecDataBinding <- function(aList, cntxt) {
+    vecval <- NULL
+    if(typeof(aList) == 'symbol') {
+        listExpr = cntxt$localbindings[[as.character(aList)]]
+        if(!is.null(listExpr) && typeof(listExpr) == "language"
+                && as.character(listExpr[[1]]) == "va_vec2list") {
+            vecval = listExpr[[2]] #should be a symbol with .va. prefix
+        }
+        
+    } else if(typeof(aList) == "language" && as.character(aList[[1]]) == "va_vec2list") {
+        vecval = aList[[2]]
+    }
+    vecval
+}
 
 ## Scalar Transformation
 ## Each return includes [updatedNode, updatedCntxt, isDenseData]
@@ -103,8 +118,11 @@ applycmpCall <- function(call, precntxt) {
         # no matter which situation, just wrap f with va_vecFun
         vf <- genVecFunNode(f, cntxt)
         
-        denseData <- getVecVal(l, isData = TRUE)
-        call <- as.call(list(vf, denseData))
+        vecval <- tryGetVecDataBinding(l, cntxt) #try to get the vec rep
+        if(is.null(vecval)) {
+            vecval <- genVecObjectNode(l, isData = TRUE)            
+        }
+        call <- as.call(list(vf, vecval))
         isDenseData <- TRUE #the only place change the list rep into vec rep
         
         #TODO: Handle lapply's input is a vec2list case
@@ -119,21 +137,8 @@ applycmpCall <- function(call, precntxt) {
         ret <- applycmp(args[[2]], cntxt) 
         l <- getRetVal(ret) #may be wrapped 
         cntxt <- ret[[2]] #update local context
-        vecval <- NULL
-        #case 1. l is a symbol and bound to an expression and the expression is DelayedAssign with list
-        if(typeof(l) == 'symbol') {
-            listExpr = cntxt$localbindings[[as.character(l)]]
-            if(!is.null(listExpr) && typeof(listExpr) == "language"
-                    && as.character(listExpr[[1]]) == "va_vec2list") {
-                vecval = listExpr[[2]] #should be a symbol with .va. prefix
-            }
-            
-        }
-        #case 2. l is just a vec2list, 
-        if(typeof(l) == "language" && as.character(l[[1]]) == "va_vec2list") {
-            vecval = l[[2]]
-        }
-        
+        vecval <- tryGetVecDataBinding(l, cntxt)
+                
         if(is.null(vecval)) {
             call <- as.call(c(fun, '+', l))
         } else {
@@ -285,7 +290,7 @@ genVecFunNode <- function(fun, cntxt) {
             as.symbol(BuiltinVecFuns[[name]])
         }
         else {
-            getVecVal(fun, isData = FALSE) #get the wrapper va_vecClosure() with runtime binding
+            genVecObjectNode(fun, isData = FALSE) #get the wrapper va_vecClosure() with runtime binding
         }
     } else if (typeof(fun) == 'closure') { # a real runtime object
         va_vecClosure(fun) #note here vecClosure will only return the closure
