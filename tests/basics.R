@@ -1,7 +1,9 @@
 # Simple Tests for vecapply library
 
-library(vecapply)
-#source('../R/vecapply.R')
+#library(vecapply)
+source('../R/cmputility.R')
+source('../R/vecapply.R')
+source('../R/runtime.R')
 
 CHECK <- function(a, b, case_name) {
     if(!isTRUE(all.equal(a,b))) stop("[FAIL]",case_name)
@@ -54,7 +56,7 @@ fun2 <- function() {
 
 vfun2 <- va_cmpfun(fun2)
 
-CHECK(vfun1(), fun1(), "Full function 2")
+CHECK(vfun2(), fun2(), "Full function 2")
 
 
 ### Scalar function vectorization
@@ -85,18 +87,8 @@ grad.func <- function(yx) {
 v_grad.func <- va_vecClosure(grad.func)
 
 
-#test var binding
-test3 <- function() {
-    aList <- list(1,2,3,4,5)
-    if(True){
-        bList <- "abcd"
-    }
-}
-
-va_vecClosure(test3)
-
 #test Reduce('+', lapply(aFun))
-test4 <- function() {
+testReduce_1 <- function() {
     aList <- list(1,2,3,4,5)
     aFun <- function(x) { 
         y <- x + 1
@@ -105,10 +97,10 @@ test4 <- function() {
     Reduce('+', lapply(aList, aFun))
 }
 
-va_vecClosure(test4)
+va_cmpfun(testReduce_1)
 
 #test Reduce
-test5 <- function() {
+testReduce_2 <- function() {
     aList <- list(1,2,3,4,5)
     aFun <- function(x) { 
         y <- x + 1
@@ -118,19 +110,65 @@ test5 <- function() {
     Reduce('+', outList)
 }
 
-va_vecClosure(test5)
+va_cmpfun(testReduce_2)
 
 #test if else transform
-test6 <- function(x) {
+testIf_1 <- function(x) {
     if(x) { y} else { x}
     
     if(y) { x} else { 1}
 }
 
-va_vecClosure(test6)
+va_vecClosure(testIf_1)
+
+testIf_2 <- function(x) {
+    if(x) { y }
+    
+    if(y) { 1 }
+}
+
+va_vecClosure(testIf_2)
 
 
-test7 <- function() {
+#test var binding
+testIf_3 <- function(x) {
+    aList <- list(1,2,3,4,5)
+    if(True){
+        bList <- aList
+    } else {
+        bList <- x
+    }
+}
+
+va_vecClosure(testIf_3)
+
+
+testIf_4 <- function(x) {
+    aList <- list(1,2,3,4,5)
+    if(False){
+        bList <- x
+    } 
+}
+
+va_vecClosure(testIf_4)
+
+
+#lapply's result as lapply
+testLapply_1 <- function() {
     dists <- lapply(pts, dist.func)
     ids <- lapply(dists, which.min) 
 }
+
+va_cmpfun(testLapply_1)
+
+
+testLoopLapply_1 <- function () {
+    aList <- list(1,2,3,4,5)
+    aFun <- function(x) { x + 1 }
+    for(i in 1:50) {
+        bList<- lapply(aList, aFun)
+    }
+}
+
+
+va_cmpfun(testLoopLapply_1)
