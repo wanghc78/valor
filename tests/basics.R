@@ -170,5 +170,14 @@ testLoopLapply_1 <- function () {
     }
 }
 
-
 va_cmpfun(testLoopLapply_1)
+
+
+testTwoLapply_1 <- function() {
+    aList <- list(1:2, 3:4, 5:6)
+    bList <- lapply(aList, function(a){a+1})
+    cList <- lapply(bList, which.min)
+    cList
+}
+
+va_cmpfun(testTwoLapply_1)

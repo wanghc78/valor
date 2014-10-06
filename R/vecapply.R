@@ -108,26 +108,36 @@ applycmpCall <- function(call, precntxt) {
         && ! as.character(args[[2]]) %in% UnsupportedFuns) {
         #in this case, the lapply's argument, input maybe another lapply expr or symbol
 
-        ## data
+        ## handle data
         ret <-  applycmp(args[[1]], cntxt)
         l <- getRetVal(ret) #wrap vec2list ondemand
         cntxt <- ret[[2]]
-        
-        ## function
-        f <- args[[2]]
-        # no matter which situation, just wrap f with va_vecFun
-        vf <- genVecFunNode(f, cntxt)
         
         vecval <- tryGetVecDataBinding(l, cntxt) #try to get the vec rep
         if(is.null(vecval)) {
             vecval <- genVecObjectNode(l, isData = TRUE)            
         }
-        call <- as.call(list(vf, vecval))
-        isDenseData <- TRUE #the only place change the list rep into vec rep
         
-        #TODO: Handle lapply's input is a vec2list case
-        # idea: if the function take vector as input (sum, which.min, etc.), then vec2list's src must be SoA
-        #       then, just do simplify2array, and apply with dim = 1 to get the result
+        ## handle function function
+        sf <- args[[2]] #scalar function
+        sf_name <- as.character(sf)
+        if(sf_name %in% VectorInputFuns && isBaseVar("lapply", cntxt)) {
+            #use special handling to denseData as input
+            # idea: if the function take vector as input (sum, which.min, etc.), then vec2list's src must be SoA
+            #       then, just do simplify2array, and apply with dim = 1 to get the result
+            
+            #wrap the vecval into simplify2array #wrap it into apply
+            vecval <- as.call(list(as.symbol("simplify2array"), vecval))
+            call <- as.call(list(as.symbol("apply"), vecval, 1, sf))
+            isDenseData <- FALSE 
+        } else {
+            # use vf to process
+            vf <- genVecFunNode(sf, cntxt)
+            call <- as.call(list(vf, vecval))
+            isDenseData <- TRUE #the only place change the list rep into vec rep
+        }
+
+
         
     } else if(fun_name == "Reduce" && isBaseVar("Reduce", cntxt) 
             && args[[1]] == '+' #only support Reduce add
@@ -182,6 +192,10 @@ applycmpCall <- function(call, precntxt) {
         cntxt <- ret[[2]]
         cntxt$localbindings[[lhs]] = rhs
         call <- as.call(c(fun, args[[1]], rhs))
+    }
+    else if(fun_name == "function") {
+        #apply transformation will not directly handle nested call
+        #Nothing
     }
     else { #other general function, not control
         #must visit each args, but not the call
@@ -241,7 +255,7 @@ veccmp <- function(e, cntxt) {
         veccmpCall(e, cntxt)
     else if (typeof(e) == "symbol")
         veccmpSym(e, cntxt)
-    else if (typeof(e) == "pairlist")
+    else if (typeof(e) == "pairlist" || typeof(e) == "NULL") #note empty args
         veccmpFormals(e, cntxt)
     else if (typeof(e) == "bytecode")
         cntxt$stop(gettext("cannot vec compile byte code literals in code"),
@@ -269,6 +283,9 @@ ControlFlowFuns <- c("for", "if", "repeat", "while", "return", "switch")
 #Unsupported Funcs that cannot be vectorized
 UnsupportedFuns <- c(".Internal", ".External")
 
+#Not vectorize these funs with languageFuns
+SupportedFuns <- c("lapply")
+
 # Vector object as input functions, but has no direct higher function mapping available for lapply
 VectorInputFuns <- c("min", "max", "which.min", "which.max")
 
@@ -284,7 +301,7 @@ genVecFunNode <- function(fun, cntxt) {
     if (typeof(fun) == 'symbol') {
         #either return a wrapper, or return the real object
         name <- as.character(fun)
-        if (name %in% languageFuns) { 
+        if (name %in% languageFuns || name %in% SupportedFuns) { 
             fun #generally it will not happen
         } else if(!is.null(BuiltinVecFuns[[name]])) {
             as.symbol(BuiltinVecFuns[[name]])
@@ -526,7 +543,19 @@ veccmpCall <- function(call, precntxt) {
         # false block have to insert setdiff(postTrueCntxt$vecvars, postFalseCntxt$vecvars)
         cntxt$vecvars <- union(postTrueCntxt$vecvars,postFalseCntxt$vecvars)
     }
-    else {
+    else if(fun_name == "function") {
+        #vec transform for nested function. no need transform formals
+        if(!is.null(args[[1]])) {
+            ret <- veccmp(args[[1]], cntxt)
+            args[[1]] <- ret[[1]]
+            cntxt <- ret[[2]]
+        }
+        #handle body
+        ret <- veccmp(args[[2]], cntxt)
+        args[[2]] <- ret[[1]]
+        cntxt <- ret[[2]]
+        vecFlag <- FALSE  # a function object is not vec, otherwise, lapply will be forced as vectorized
+    } else {
         #in vectorization situation. This will not handle lapply anymore right now
         # the algorithm, just visit the args, if any dim is larger than 0, 
         # wrap all with vec data except the 
