@@ -11,7 +11,7 @@
 #        or a multi-dim array --> return the first dim size
 va_vecLen <- function(v) { #v must be vec, or SoA
     if(is.list(v)){
-        vecLen(v[[1]])
+        va_vecLen(v[[1]])
     } else {
         v_dim <- dim(v) 
         if(is.null(v_dim)) {

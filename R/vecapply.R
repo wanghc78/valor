@@ -442,10 +442,10 @@ veccmpCall <- function(call, precntxt) {
             ret <- veccmp(args[[i]], cntxt)
             cntxt <- ret[[2]] #update local context
             args[[i]] <- ret[[1]] #note the second one is the dim size
-            dimsret[[i]] <- ret[[3]]
+            dimsret[i] <- ret[[3]]
         }
         
-        if(dimsret[[1]]) { #val is vectorized
+        if(dimsret[1]) { #val is vectorized
             #then all indices cannot be vectorized
             if(sum(dimsret) > 1L) {
                 cntxt$stop(gettext("cannot vec an index call with vec-val and any index is vectorized"),
@@ -466,6 +466,66 @@ veccmpCall <- function(call, precntxt) {
                 vecFlag <- 0L
             }
         }
+    } else if(fun_name == "[["){
+        #only consider args[[1]] and args[[2]]
+        # val[[idx]]: 4 combins: 
+        #  val scalar, idx: scalar. nothing
+        #  val vector, idx scalar/vector. cannot handle right now
+        #  val scalar, idx: vector. ==> vectorize val, use [] to replace [[]]. return vector
+        ret <- veccmp(args[[1]], cntxt)
+        args[[1]] <- ret[[1]]
+        cntxt <- ret[[2]]
+        if(ret[[3]] > 0) {
+            cntxt$stop(gettext("[Error]Cannot handle [[ index a vector list"),
+                    cntxt)
+        }
+        
+        ret <- veccmp(args[[2]], cntxt)
+        args[[2]] <- ret[[1]]
+        cntxt <- ret[[2]]
+        vecFlag <- ret[[3]]
+        if(vecFlag > 0) {
+            #must first wrap args[[1]] with data wrapper
+            fun <- quote(`[`) #change fun to []
+            args[[1]] <- as.call(c(quote(va_list2vec), args[[1]]))
+        }
+    
+    } else if(fun_name == "$"){
+        #only consider args[[1]] and args[[2]]
+        #args[[2]] must be a scalar, other wise cannot handle
+        valret <- veccmp(args[[1]], cntxt)
+        args[[1]] <- valret[[1]]
+        cntxt <- valret[[2]]
+        vecFlag <- valret[[3]]
+        
+        idxret <- veccmp(args[[2]], cntxt)
+        if(idxret[[3]] > 0) {
+            cntxt$stop(gettext("[Error]Cannot handle $ access a vector label"),
+                    cntxt)
+        }
+        args[[2]] <- idxret[[1]]
+        cntxt <- idxret[[2]]
+        
+        #do op shift
+        if(vecFlag > 0 && idxret[[3]] == 0) {
+            #2nd condition must satisify
+            #if the val part args[[1]] is an index [1] with vector object. switch it
+
+            #look for inner index
+            innerCall <-args[[1]] #may be just a symbol, or (), or index[]
+            while(typeof(innerCall) == "language" && as.character(innerCall[[1]]) == '(') {
+                innerCall <- innerCall[[2]] #remove ()
+            }
+            if(typeof(innerCall) == "language" && as.character(innerCall[[1]]) == '[') {
+                # do the replacement
+                tmp<-innerCall[[3]] #tmp store index
+                innerCall[[1]] <-quote(`$`)
+                innerCall[[3]] <-args[[2]]
+                args[[1]] <- innerCall
+                fun <- quote(`[`)
+                args[[2]] <- tmp
+            }
+        }
     } else if (fun_name == "{") {
         #vector space, { function call only consider the last arg's result a vecFlag's result
         vecFlag <- 0L #by default it is sequential
@@ -475,7 +535,7 @@ veccmpCall <- function(call, precntxt) {
             cntxt <- ret[[2]]
             vecFlag <- ret[[3]]
         }
-    } else if (fun_name == "if" && isBaseVar("if", cntxt)) {
+    } else if (fun_name == "if") {
         #TODO: not fully support inside if's variable assign. Need track variable assign inside
         #control flow basics.
         # algorithm. transform cond. 
@@ -554,8 +614,54 @@ veccmpCall <- function(call, precntxt) {
         ret <- veccmp(args[[2]], cntxt)
         args[[2]] <- ret[[1]]
         cntxt <- ret[[2]]
-        vecFlag <- FALSE  # a function object is not vec, otherwise, lapply will be forced as vectorized
-    } else {
+        vecFlag <- ret[[3]]  #even a function could be changed to vector
+    } 
+    else if(fun_name == "lapply" && isBaseVar("lapply", cntxt)) {
+        #invector context, lapply or other apply, if the list is vectorized. then it cannot handle
+        #if the function is vectorized, then the result is changed to vectorized. but lapply will not be changed.
+        dimsret <- integer(length(args))
+        for (i in seq_along(args)) {
+            ret <- veccmp(args[[i]], cntxt)
+            args[[i]] <- ret[[1]] #note the second one is the dim size
+            cntxt <- ret[[2]]
+            dimsret[i] <- ret[[3]]
+        }
+        if(dimsret[1] > 0) {
+            cntxt$stop(gettext("[Error]Cannot trans lapply a vectorized list object inside vec transform!"),
+                    cntxt)
+        }
+        if(sum(dimsret) > 0 && dimsret[2] == 0) {
+            cntxt$stop(gettext("[Error]Cannot trans lapply with function is still scalar but other inputs are vectors!"),
+                    cntxt)
+        }
+        vecFlag <- dimsret[2]
+        
+        if(vecFlag > 0 && length(args) > 2) { #wrap args[[i]] where i>2 with dimsret[i] == 0
+            refvar <- as.symbol(cntxt$dimvars[1])
+            for(i in 3:length(args)) {
+                if(dimsret[i] == 0) {
+                    args[[i]] <- as.call(list(quote(va_repVecData), args[[i]], refvar))                    
+                }
+            }
+        }
+    }
+    else if(fun_name %in% VectorInputFuns && isBaseVar(fun_name, cntxt)) {
+        #use special handling to denseData as input
+        # idea: if the function take vector as input (sum, which.min, etc.), then vec2list's src must be SoA
+        #       then, just do simplify2array, and apply with dim = 1 to get the result
+        
+        ret <- veccmp(args[[1]], cntxt)
+        args[[1]] <- ret[[1]]
+        cntxt <- ret[[2]]
+        vecFlag <- ret[[3]]
+        if(vecFlag > 0) {  #vectorized the original vector input
+            vecdata <- as.call(c(as.symbol("simplify2array"), args[[1]]))
+            args[[1]] <- as.symbol(fun_name)
+            args <- c(vecdata, 1, as.list(args))
+            fun <- as.symbol("apply")
+        }    
+    }
+    else {
         #in vectorization situation. This will not handle lapply anymore right now
         # the algorithm, just visit the args, if any dim is larger than 0, 
         # wrap all with vec data except the 
@@ -564,7 +670,7 @@ veccmpCall <- function(call, precntxt) {
         for (i in seq_along(args)) {
             ret <- veccmp(args[[i]], cntxt)
             args[[i]] <- ret[[1]] #note the second one is the dim size
-            dimsret[[i]] <- ret[[3]]
+            dimsret[i] <- ret[[3]]
             controlCntxt <- list()
             if(fun_name == "for") {
                 if(i <= 2) {
