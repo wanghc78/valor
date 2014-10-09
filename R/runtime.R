@@ -183,6 +183,21 @@ va_vecApplyWrapper <- function(vData, fun) {
     
 }
 
+
+#used to solve the case
+# if a <- integer(5). later a[5] <- ...
+#  then we need insert 
+#  a<-va_repVecDataOnDemand(a, 2, refVal)
+#  a[, 5] <- ...
+va_repVecDataOnDemand <- function(data, expectedDim, refVal) {
+    numDim <- length(dim(data))
+    if(expectedDim > numDim) { #matrix:2, vector :0
+        va_repVecData(data, refVal)
+    } else {
+        data
+    }
+}
+
 # A very simple way to vectorize a function.
 va_rawVecFun <- function(fun) {
     function(v) {

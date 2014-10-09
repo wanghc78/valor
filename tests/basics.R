@@ -181,3 +181,15 @@ testTwoLapply_1 <- function() {
 }
 
 va_cmpfun(testTwoLapply_1)
+
+
+testUnsupported_1 <- function(train_items_category) {
+    names(which.max(table(train_items_category)))
+}
+va_vecClosure(testUnsupported_1)
+
+
+testVectorInputFun_1 <- function(train_items_category) {
+    which.min(train_items_category)
+}
+va_vecClosure(testVectorInputFun_1)

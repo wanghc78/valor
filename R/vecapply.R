@@ -272,7 +272,8 @@ veccmp <- function(e, cntxt) {
 BuiltinVecFuns <- list(
         c = "cbind",
         sum = "rowSums",
-        mean = "rowMeans"
+        mean = "rowMeans",
+        unlist = "simplify2array"
         )
 #These function by default support replication expansion. So no need do manu repExpand        
 ImplicitRepFuns <- c("+", "-", "*", "/", "%/%","^", "%%", ">", ">=", "<", "<=", "!=", "==")
@@ -281,13 +282,13 @@ ImplicitRepFuns <- c("+", "-", "*", "/", "%/%","^", "%%", ">", ">=", "<", "<=", 
 ControlFlowFuns <- c("for", "if", "repeat", "while", "return", "switch")
 
 #Unsupported Funcs that cannot be vectorized
-UnsupportedFuns <- c(".Internal", ".External")
+UnsupportedFuns <- c(".Internal", ".External", "names", "table")
 
 #Not vectorize these funs with languageFuns
 SupportedFuns <- c("lapply")
 
 # Vector object as input functions, but has no direct higher function mapping available for lapply
-VectorInputFuns <- c("min", "max", "which.min", "which.max")
+VectorInputFuns <- c("min", "max", "which.min", "which.max", "order")
 
 # Get the AST Node for the vectorized version of the function (symbol or real object)
 # only expand one dimension right now. Called by handling fun symobl transformation
@@ -372,27 +373,27 @@ veccmpCall <- function(call, precntxt) {
             #build the function, with the whole call
             wrapfun <- wrapExprToFun(vecvars, call)
             
-            #build the mapply
-            fun<- quote(mapply)
-            #now wrap vectors to vec2list
-            for(i in seq_along(vecvars)) {
-                vecvars[[i]] <- as.call(c(quote(va_vec2list), vecvars[[i]]))
+            if(length(vecvars) == 1) {
+                #use runtime function  va_vecApplyWrapper(vecvars, wrapfun)
+                args<- list(as.call(c(quote(va_vecApplyWrapper), vecvars, wrapfun)))
+            } else {
+                #now wrap vectors to vec2list
+                for(i in seq_along(vecvars)) {
+                    vecvars[[i]] <- as.call(c(quote(va_vec2list), vecvars[[i]]))
+                }
+                args<- list(as.call(c(quote(mapply), wrapfun, vecvars)))
+            #return the mapply. 
             }
-            args<- list(as.call(c(quote(mapply), wrapfun, vecvars)))
-            #return the mapply.   # have to insert another level list2vec
+            # have to insert another level list2vec
             fun <- quote(va_list2vec)
             vecFlag <- 1L
-        } 
-    } else if (fun_name == '=' || fun_name == '<-') {
-        #should handle lhs is a symbol or lhs is a call. e.g. x[1]
-        if(!is.symbol(args[[1]])) {
-            #should transform the lhs
-            ret <- veccmp(args[[1]], cntxt)
-            args[[1]] <- ret[[1]]
-            cntxt <- ret[[2]] #update local context
-        } 
+        } else {
+            vecFlag <- 0L
+        }
         
-        #transform RHS
+    } else if (fun_name == '=' || fun_name == '<-') {
+
+        #transform RHS first
         ret <- veccmp(args[[2]], cntxt)
         cntxt <- ret[[2]] #update local context
         vecFlag <- ret[[3]] #from the assign
@@ -406,17 +407,30 @@ veccmpCall <- function(call, precntxt) {
         } else { #lhs is a call
             # handle a speical case, the rhs is vecFlag = FALSE, but lhs var is a vector
             # 20141004 ?? Why this situation happens. Need a flag
+            
+            expectedDim <- 0L # a flag to indicate whether to insert va_repVecDataOnDemand
             if(!vecFlag && isVecVar(lhsSym, cntxt)) {
                 refvar <- as.symbol(cntxt$dimvars[1])
                 args[[2]] <- as.call(list(quote(va_repVecData), args[[2]], refvar))
                 vecFlag <- 1L
-            }
-            
-            if(vecFlag && !isVecVar(lhsSym, cntxt)) {
-                #TODO: need handle special cases e.g.
+            } else if(vecFlag && !isVecVar(lhsSym, cntxt)) {
+                #Need handle special cases e.g.
                 #   scalar code: y <- integer(5). then y[1] <- a
+                cntxt <- addCenvVecvars(cntxt, lhsSym)
+                # check the dim access of lhs
+                expectedDim <- length(args[[1]]) - 2 + 1 #remove '[' and 'sym', add additional dim 
             }
+            #should handle lhs is a symbol or lhs is a call. e.g. x[1]
+            ret <- veccmp(args[[1]], cntxt)
+            args[[1]] <- ret[[1]]
+            cntxt <- ret[[2]] #update local context
             
+            if(expectedDim > 0) { #insert the stmt
+                refvar <- as.symbol(cntxt$dimvars[1])
+                expandStmt <- as.call(c(quote(va_repVecDataOnDemand), as.symbol(lhsSym), expectedDim, refvar))
+                expandAssignStmt <- as.call(c(quote(`<-`), as.symbol(lhsSym), expandStmt))
+                args[[2]] <- as.call(c(quote(`{`), expandAssignStmt, args[[2]]))
+            }
         }
     } else if (fun_name == "assign" && isBaseVar("assign", cntxt)
             || fun_name == "delayedAssign" && isBaseVar("delayedAssign", cntxt)) {
@@ -654,12 +668,35 @@ veccmpCall <- function(call, precntxt) {
         args[[1]] <- ret[[1]]
         cntxt <- ret[[2]]
         vecFlag <- ret[[3]]
-        if(vecFlag > 0) {  #vectorized the original vector input
-            vecdata <- as.call(c(as.symbol("simplify2array"), args[[1]]))
-            args[[1]] <- as.symbol(fun_name)
-            args <- c(vecdata, 1, as.list(args))
-            fun <- as.symbol("apply")
+        if(vecFlag > 0) {  #Wrap it into va_vecApplyWrapper
+            args<- list(as.call(c(quote(va_vecApplyWrapper), args[[1]], as.symbol(fun_name))))
+            fun <- quote(va_list2vec)
         }    
+    }
+    else if(fun_name == "for") { #has three args. 
+        #right now doesnot support conditions are vectorized
+        ret <- veccmp(args[[1]], cntxt)
+        if(ret[[3]] > 0) {
+            cntxt$stop(gettext("[Error]Cannot trans for loop with vector induction var"),
+                    cntxt)
+        }
+        args[[1]] <- ret[[1]]
+        cntxt <- ret[[2]]
+        
+        ret <- veccmp(args[[2]], cntxt)
+        if(ret[[3]] > 0) {
+            cntxt$stop(gettext("[Error]Cannot trans for loop with vector loop scope"),
+                    cntxt)
+        }
+        args[[2]] <- ret[[1]]
+        cntxt <- ret[[2]]
+        
+        #the body
+        ret <- veccmp(args[[3]], cntxt)
+        args[[3]] <- ret[[1]]
+        cntxt <- ret[[2]]
+        
+        vecFlag <- 0L #for loop will not return valuable stuff
     }
     else {
         #in vectorization situation. This will not handle lapply anymore right now
@@ -672,15 +709,7 @@ veccmpCall <- function(call, precntxt) {
             args[[i]] <- ret[[1]] #note the second one is the dim size
             dimsret[i] <- ret[[3]]
             controlCntxt <- list()
-            if(fun_name == "for") {
-                if(i <= 2) {
-                    cntxt <- ret[[2]]
-                    controlCntxt <- list(cntxt)
-                } else{
-                    cntxt <- ret[[2]]
-                    controlCntxt <- c(controlCntxt, cntxt)
-                }
-            } else if(fun_name == "while") {
+            if(fun_name == "while") {
                 if(i == 1) {
                     cntxt <- ret[[2]]
                     controlCntxt <- list(cntxt)
