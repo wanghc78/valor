@@ -123,7 +123,7 @@ va_list2vec <- function(l) {
     
     #then e1 is atomic type
     #only support v as vector or matrix
-    tmp <- simplify2array(l)
+    tmp <- if(is.list(l)) {simplify2array(l)} else {l}
     # if is.list(tmp) { warning, and return the list }
     if(is.null(dim(tmp))) {
         tmp
@@ -155,6 +155,33 @@ va_getByIdx <- function(v, idx) {
     }
 }
 
+# check a data structure is a simple list of array
+#  input must be a list, and if return true, we can simplify use simplify2array to handle it
+va_isSimpleListoArray <- function(vData) {
+    if(is.null(names(vData))
+       && length(unique(unlist(lapply(vData, length))))) {
+        return(TRUE)
+    } else {
+        return(FALSE)        
+    }
+}
+
+
+#if vData is atomic --> apply(vData, 1, fun)
+#if vData can be transformed with simplify2array
+#    vData is a list, no attributes, 
+# Note return the list represent
+va_vecApplyWrapper <- function(vData, fun) {
+    if(!is.list(vData)) {
+        apply(vData, 1, fun)
+    } else if(va_isSimpleListoArray(vData)) {
+        apply(simplify2array(vData), 1, fun)
+    } else {
+        #more general case, must transform into list, use lapply
+        lapply(va_vec2list(vData), fun)
+    }
+    
+}
 
 # A very simple way to vectorize a function.
 va_rawVecFun <- function(fun) {
