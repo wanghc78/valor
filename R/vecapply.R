@@ -501,7 +501,8 @@ veccmpCall <- function(call, precntxt) {
         if(vecFlag > 0) {
             #must first wrap args[[1]] with data wrapper
             fun <- quote(`[`) #change fun to []
-            args[[1]] <- as.call(c(quote(va_list2vec), args[[1]]))
+            #And should consider dynamic linkage optimization
+            args[[1]] <- genVecObjectNode(args[[1]], isData = TRUE)
         }
     
     } else if(fun_name == "$"){
