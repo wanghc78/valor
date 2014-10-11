@@ -273,7 +273,8 @@ BuiltinVecFuns <- list(
         c = "cbind",
         sum = "rowSums",
         mean = "rowMeans",
-        unlist = "simplify2array"
+        unlist = "simplify2array",
+        tcrossprod = "va_tcrossprod"
         )
 #These function by default support replication expansion. So no need do manu repExpand        
 ImplicitRepFuns <- c("+", "-", "*", "/", "%/%","^", "%%", ">", ">=", "<", "<=", "!=", "==")
@@ -302,6 +303,7 @@ genVecFunNode <- function(fun, cntxt) {
     if (typeof(fun) == 'symbol') {
         #either return a wrapper, or return the real object
         name <- as.character(fun)
+        #Risk %*% function cannot be handled simplily
         if (name %in% languageFuns || name %in% SupportedFuns) { 
             fun #generally it will not happen
         } else if(!is.null(BuiltinVecFuns[[name]])) {
@@ -402,7 +404,7 @@ veccmpCall <- function(call, precntxt) {
         #now build the link if required
         lhsSym <- getAssignedVar(call)
         if(is.symbol(args[[1]])) { #lhs is a symbol
-            cntxt$env$localbindings[[lhsSym]] <- args[[2]] #note here the link is built with the wrapper
+            cntxt$localbindings[[lhsSym]] <- args[[2]] #note here the link is built with the wrapper
             if(vecFlag) { cntxt <- addCenvVecvars(cntxt, lhsSym) }
         } else { #lhs is a call
             # handle a speical case, the rhs is vecFlag = FALSE, but lhs var is a vector
@@ -411,7 +413,8 @@ veccmpCall <- function(call, precntxt) {
             expectedDim <- 0L # a flag to indicate whether to insert va_repVecDataOnDemand
             if(!vecFlag && isVecVar(lhsSym, cntxt)) {
                 refvar <- as.symbol(cntxt$dimvars[1])
-                args[[2]] <- as.call(list(quote(va_repVecData), args[[2]], refvar))
+                #?? Do we really need the va_repVecData here. R supports replication
+                #args[[2]] <- as.call(list(quote(va_repVecData), args[[2]], refvar))
                 vecFlag <- 1L
             } else if(vecFlag && !isVecVar(lhsSym, cntxt)) {
                 #Need handle special cases e.g.
@@ -447,7 +450,7 @@ veccmpCall <- function(call, precntxt) {
         } else {
             vecFlag <- 0L
         }
-        cntxt$env$localbindings[[lhsSym]] <- ret[[1]]
+        cntxt$localbindings[[lhsSym]] <- ret[[1]]
         args[[2]] <- ret[[1]] #in all cases, the lhs will not be transformed
     } else if (fun_name == "[") { 
         #e.g. x[1] ('['(x,1) )or x[1,2]

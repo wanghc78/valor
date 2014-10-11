@@ -102,7 +102,14 @@ va_vec2list <- function(v) {
         lapply(1:n, function(i) v[i])
     } else {
         n <- v_dim[1]
-        lapply(1:n, function(i) v[i,])
+        ndim <- length(v_dim)
+        if(ndim == 2) {
+            lapply(1:n, function(i) v[i,])
+        } else if(ndim == 3){
+            lapply(1:n, function(i) v[i,,])
+        } else {
+            stop("[ERROR]Cannot support high-dim's vec2list")
+        }
     }   
 }
 
@@ -247,4 +254,22 @@ va_reduceMean <- function(v) {
     else { mean(v) }
 }
 
+#######################################################################
+# The below are vector functions for base lib functions
 
+
+# In this case, vx must be a matrix, and original x is a vector
+va_tcrossprod <- function(vx, vy = NULL) {
+    vx_dims <- dim(vx)
+    if(length(vx_dims) != 2) {
+        stop("[ERROR]Not suppprt tcrossprod on a matrix")
+    }
+    if(is.null(vy)) {
+        res <- apply(vx, 2, `*`, vx)
+        dim(res) <- c(vx_dims[1], vx_dims[2], vx_dims[2])
+    } else {
+        res <- t(mapply(tcrossprod, va_vec2list(vx), va_vec2list(vy)))
+        dim(res) <- c(vx_dims[1], vx_dims[2], dim(vy)[2])
+    }
+    res
+}

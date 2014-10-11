@@ -193,3 +193,9 @@ testVectorInputFun_1 <- function(train_items_category) {
     which.min(train_items_category)
 }
 va_vecClosure(testVectorInputFun_1)
+
+
+testSimplyAssign_1 <- function(a) {
+    r <- a
+}
+va_vecClosure(testSimplyAssign_1)
