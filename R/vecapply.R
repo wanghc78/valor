@@ -277,7 +277,7 @@ BuiltinVecFuns <- list(
         tcrossprod = "va_tcrossprod"
         )
 #These function by default support replication expansion. So no need do manu repExpand        
-ImplicitRepFuns <- c("+", "-", "*", "/", "%/%","^", "%%", ">", ">=", "<", "<=", "!=", "==")
+ImplicitRepFuns <- c("+", "-", "*", "/", "%/%","^", "%%", ">", ">=", "<", "<=", "!=", "==", "cbind")
 
 #Used for building the simple Basic Block's defs binding calculation
 ControlFlowFuns <- c("for", "if", "repeat", "while", "return", "switch")
@@ -413,7 +413,8 @@ veccmpCall <- function(call, precntxt) {
             expectedDim <- 0L # a flag to indicate whether to insert va_repVecDataOnDemand
             if(!vecFlag && isVecVar(lhsSym, cntxt)) {
                 refvar <- as.symbol(cntxt$dimvars[1])
-                #?? Do we really need the va_repVecData here. R supports replication
+                #?? Do we really need the va_repVecData here. R supports replication during assign
+                # only if args[[2]] is a real-scalar case, there is no need to do replication.
                 #args[[2]] <- as.call(list(quote(va_repVecData), args[[2]], refvar))
                 vecFlag <- 1L
             } else if(vecFlag && !isVecVar(lhsSym, cntxt)) {
@@ -730,6 +731,7 @@ veccmpCall <- function(call, precntxt) {
         vecFlag <- as.integer(any(dimsret))
         if(vecFlag) { #then every operand whose dims is scalar should be wrapped as vecdata
             fun <- genVecFunNode(fun, cntxt)
+            fun_name <- as.character(fun)
             refvar <- as.symbol(cntxt$dimvars[1])
             for (i in seq_along(args)) {
                 #This is an optimization. If the args[[i]] is a scalar, and the fun is a math operator, then no need expand
