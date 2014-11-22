@@ -286,7 +286,7 @@ ControlFlowFuns <- c("for", "if", "repeat", "while", "return", "switch")
 UnsupportedFuns <- c(".Internal", ".External", "names", "table")
 
 #Not vectorize these funs with languageFuns
-SupportedFuns <- c("lapply")
+SupportedFuns <- c("lapply", "tanh")
 
 # Vector object as input functions, but has no direct higher function mapping available for lapply
 VectorInputFuns <- c("min", "max", "which.min", "which.max", "order")
@@ -545,6 +545,32 @@ veccmpCall <- function(call, precntxt) {
                 args[[2]] <- tmp
             }
         }
+    } else if(fun_name == "%*%") { 
+        #there are some special rules to handle cross product
+        valret <- veccmp(args[[1]], cntxt)
+        args1 <- valret[[1]]
+        cntxt <- valret[[2]]
+        vecFlag1 <- valret[[3]]
+        valret <- veccmp(args[[2]], cntxt)
+        args2 <- valret[[1]]
+        cntxt <- valret[[2]]
+        vecFlag2 <- valret[[3]]
+        # case 1: both sides are vectorized, Not support     
+        if(vecFlag1 > 0 && vecFlag2 > 0) {
+            cntxt$stop(gettext("[Error]Cannot trans %*% on two vectorized objects!"),
+                    cntxt)
+        } else if(vecFlag2 > 0) {
+            #if the 2nd op is vectorized, just do left/right switch and transform the matrix
+            vecFlag <- vecFlag2
+            args[[1]] <- args2
+            args[[2]] <- as.call(c(quote(t), args1))
+        } else {
+            #could be both args are not vectorized, or 1st args are vectorized
+            #no other changes
+            vecFlag <- vecFlag1 
+            args[[1]] <- args1
+            args[[2]] <- args2
+        } 
     } else if (fun_name == "{") {
         #vector space, { function call only consider the last arg's result a vecFlag's result
         vecFlag <- 0L #by default it is sequential
@@ -553,7 +579,7 @@ veccmpCall <- function(call, precntxt) {
             args[[i]] <- ret[[1]] #note the second one is the dim size
             cntxt <- ret[[2]]
             vecFlag <- ret[[3]]
-        }
+        }   
     } else if (fun_name == "if") {
         #TODO: not fully support inside if's variable assign. Need track variable assign inside
         #control flow basics.
@@ -573,8 +599,6 @@ veccmpCall <- function(call, precntxt) {
             falseRet <- list(quote(NULL), cntxt, 0L);
             postFalseCntxt <- cntxt
         }
-
-        
         if(condRet[[3]]) { #condition is vectorized
             #change to ifelse function call
             fun <-quote(ifelse)

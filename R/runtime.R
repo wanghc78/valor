@@ -268,7 +268,7 @@ va_tcrossprod <- function(vx, vy = NULL) {
         res <- apply(vx, 2, `*`, vx)
         dim(res) <- c(vx_dims[1], vx_dims[2], vx_dims[2])
     } else {
-        res <- t(mapply(tcrossprod, va_vec2list(vx), va_vec2list(vy)))
+        res <- apply(vx, 2, `*`, vy)
         dim(res) <- c(vx_dims[1], vx_dims[2], dim(vy)[2])
     }
     res
