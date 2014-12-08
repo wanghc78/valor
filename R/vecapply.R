@@ -274,7 +274,9 @@ BuiltinVecFuns <- list(
         sum = "rowSums",
         mean = "rowMeans",
         unlist = "simplify2array",
-        tcrossprod = "va_tcrossprod"
+        tcrossprod = "va_tcrossprod",
+        which.min = "va_which.min",
+        which.max = "va_which.max"
         )
 #These function by default support replication expansion. So no need do manu repExpand        
 ImplicitRepFuns <- c("+", "-", "*", "/", "%/%","^", "%%", ">", ">=", "<", "<=", "!=", "==", "cbind")
@@ -289,7 +291,7 @@ UnsupportedFuns <- c(".Internal", ".External", "names", "table")
 SupportedFuns <- c("lapply", "tanh")
 
 # Vector object as input functions, but has no direct higher function mapping available for lapply
-VectorInputFuns <- c("min", "max", "which.min", "which.max", "order")
+VectorInputFuns <- c("min", "max", "order")
 
 # Get the AST Node for the vectorized version of the function (symbol or real object)
 # only expand one dimension right now. Called by handling fun symobl transformation
@@ -690,7 +692,7 @@ veccmpCall <- function(call, precntxt) {
     }
     else if(fun_name %in% VectorInputFuns && isBaseVar(fun_name, cntxt)) {
         #use special handling to denseData as input
-        # idea: if the function take vector as input (sum, which.min, etc.), then vec2list's src must be SoA
+        # idea: if the function take vector as input (order, max, etc.), then vec2list's src must be SoA
         #       then, just do simplify2array, and apply with dim = 1 to get the result
         
         ret <- veccmp(args[[1]], cntxt)

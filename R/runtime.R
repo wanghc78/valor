@@ -164,9 +164,10 @@ va_getByIdx <- function(v, idx) {
 
 # check a data structure is a simple list of array
 #  input must be a list, and if return true, we can simplify use simplify2array to handle it
+# The checking code is copied from simplify2array()
 va_isSimpleListoArray <- function(vData) {
     if(is.null(names(vData))
-       && length(unique(unlist(lapply(vData, length))))) {
+       && length(unique(unlist(lapply(vData, length)))) == 1L) {
         return(TRUE)
     } else {
         return(FALSE)        
@@ -187,7 +188,6 @@ va_vecApplyWrapper <- function(vData, fun) {
         #more general case, must transform into list, use lapply
         lapply(va_vec2list(vData), fun)
     }
-    
 }
 
 
@@ -272,4 +272,26 @@ va_tcrossprod <- function(vx, vy = NULL) {
         dim(res) <- c(vx_dims[1], vx_dims[2], dim(vy)[2])
     }
     res
+}
+
+va_which.min <- function(vData) {
+    if(!is.list(vData)) {
+        max.col(-vData)
+    } else if(va_isSimpleListoArray(vData)) {
+        max.col(-simplify2array(vData))
+    } else {
+        #more general case, must transform into list, use lapply
+        lapply(va_vec2list(vData), which.min)
+    }
+}
+
+va_which.max <- function(vData) {
+    if(!is.list(vData)) {
+        max.col(vData)
+    } else if(va_isSimpleListoArray(vData)) {
+        max.col(simplify2array(vData))
+    } else {
+        #more general case, must transform into list, use lapply
+        lapply(va_vec2list(vData), which.max)
+    }
 }
