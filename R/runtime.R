@@ -244,15 +244,35 @@ va_vecClosure <- function(clos, options = NULL) {
 # Target function of Reduce('+', aList), Apply(sum, ...)
 va_reduceSum <- function(v) {
     if(is.list(v)) {Reduce('+', v)} #just for safe
-    if(is.array(v)) { colSums(v) }
+    else if(is.array(v)) { colSums(v) }
     else { sum(v) }
 }
+
+# Target function of general reduce reduce(aData) with efficient perf
+va_reduce <- function(op, v) {
+    fun <- match.fun(op)
+    if(mode(v) == "numeric") {
+        if(identical(fun, .Primitive("+"))){
+            if(is.array(v)) {colSums(v) }
+            else { sum(v) }
+        } else if (identical(fun, mean)) {
+            if(is.array(v)) { colMeans(v) }
+            else { mean(v) }
+        } else {
+            Reduce(fun, v)
+        }
+    } else {  # non numberic, just call reduce
+       Reduce(fun, v)
+    }
+}
+
 
 # Target function of Apply(mean,...)
 va_reduceMean <- function(v) {
     if(is.array(v)) { colMeans(v) }
     else { mean(v) }
 }
+
 
 #######################################################################
 # The below are vector functions for base lib functions

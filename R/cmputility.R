@@ -1,6 +1,6 @@
 # TODO: Add comment
 # 
-# Author: Administrator
+# Author: Haichuan Wang (hwang154@illinois.edu)
 ###############################################################################
 
 
@@ -436,6 +436,13 @@ isBaseVar <- function(var, cntxt) {
                 (identical(info$frame, .BaseNamespaceEnv) ||
                     identical(info$frame, baseenv())))
 }
+
+## check the variable (basically function names) are from SparkR package
+isSparkRVar <- function(var, cntxt) {
+    info <- getInlineInfo(var, cntxt)
+    ( !is.null(info) && (attr(info$frame, "name") == "package:SparkR"))
+}
+
 
 ## augment compiler environment with function args and locals
 funEnv <- function(forms, body, cntxt) {

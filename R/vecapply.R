@@ -64,6 +64,45 @@ genVecObjectNode <- function(listVal, isData = TRUE) {
     }
 }
 
+# SparkR's data vectorization should be
+# { if(! exists(".va.listVal", inherits = FALSE) || !identical(.vasrc.listVal, listVal)) {
+#                .va.listVal <- cache(lapplyPartition(listVal,
+#                                                    va_list2vec)) # cache here
+#                .vasrc.listVal <- listVal
+#            }
+#            .va.listVal
+#} 
+genSparkRVecDataNode <- function(listVal) {
+    transfun <- quote(va_list2vec)
+    if(is.symbol(listVal)) {
+        listVal_name <- as.character(listVal)
+        vecValName <- paste(".va", listVal_name, sep='.')
+        vecValSym <- as.symbol(vecValName)
+        vecSrcSym <- as.symbol(paste(".vasrc", listVal_name, sep='.'))
+        ret <- quote({ if(! exists(".va.listVal", inherits = FALSE) || !identical(.vasrc.listVal, listVal)) {
+                        .va.listVal <- cache(lapplyPartition(listVal,
+                                        va_list2vec)) # cache here
+                         .vasrc.listVal <- listVal
+                       }
+                       .va.listVal
+                     })
+        #now directly modify the quote's AST
+        ret[[2]][[2]][[2]][[2]][[2]] <- vecValName
+        ret[[2]][[2]][[3]][[2]][[2]] <- vecSrcSym
+        ret[[2]][[2]][[3]][[2]][[3]] <- listVal
+        ret[[2]][[3]][[2]][[2]] <- vecValSym
+        ret[[2]][[3]][[2]][[3]][[2]][[3]] <- transfun 
+        ret[[2]][[3]][[2]][[3]][[2]][[2]] <- listVal
+        ret[[2]][[3]][[3]][[2]] <-  vecSrcSym
+        ret[[2]][[3]][[3]][[3]] <- listVal
+        ret[[3]] <- vecValSym
+        ret
+    } else {
+        #lapplyPartition(listVal, va_list2vec)
+        as.call(list(as.symbol("lapplyPartition"), listVal, transfun))   
+    }
+}
+
 # input: aList is the list from a symbol or an expression
 tryGetVecDataBinding <- function(aList, cntxt) {
     vecval <- NULL
@@ -103,11 +142,12 @@ applycmpCall <- function(call, precntxt) {
     
     isDenseData <- FALSE #only lapply will change it
     
-    if("lapply" == fun_name 
-        && isBaseVar("lapply", cntxt) && length(args) == 2
+    if("lapply" == fun_name && length(args) == 2
+        && (isBaseVar("lapply", cntxt) || isSparkRVar("lapply", cntxt))
         && ! as.character(args[[2]]) %in% UnsupportedFuns) {
         #in this case, the lapply's argument, input maybe another lapply expr or symbol
 
+        isSparkRContext <- isSparkRVar("lapply", cntxt)
         ## handle data
         ret <-  applycmp(args[[1]], cntxt)
         l <- getRetVal(ret) #wrap vec2list ondemand
@@ -115,31 +155,41 @@ applycmpCall <- function(call, precntxt) {
         
         vecval <- tryGetVecDataBinding(l, cntxt) #try to get the vec rep
         if(is.null(vecval)) {
-            vecval <- genVecObjectNode(l, isData = TRUE)            
+            if(isSparkRContext){
+                vecval <- genSparkRVecDataNode(l)
+            } else {
+                vecval <- genVecObjectNode(l, isData = TRUE)      
+            }         
         }
         
         ## handle function function
         sf <- args[[2]] #scalar function
         sf_name <- as.character(sf)
-        if(sf_name %in% VectorInputFuns && isBaseVar("lapply", cntxt)) {
-            #use special handling to denseData as input
-            # idea: if the function take vector as input (sum, which.min, etc.), then vec2list's src must be SoA
-            #       then, just do simplify2array, and apply with dim = 1 to get the result
-            
-            #wrap the vecval into simplify2array #wrap it into apply
-            vecval <- as.call(list(as.symbol("simplify2array"), vecval))
-            call <- as.call(list(as.symbol("apply"), vecval, 1, sf))
-            isDenseData <- FALSE 
-        } else {
-            # use vf to process
-            vf <- genVecFunNode(sf, cntxt)
-            call <- as.call(list(vf, vecval))
-            isDenseData <- TRUE #the only place change the list rep into vec rep
-        }
-
-
         
-    } else if(fun_name == "Reduce" && isBaseVar("Reduce", cntxt) 
+        # handle either lapply in base package or in SparkR package
+        if(!isSparkRContext) { #base case
+            if(sf_name %in% VectorInputFuns) {
+                #use special handling to denseData as input
+                # idea: if the function take vector as input (sum, which.min, etc.), then vec2list's src must be SoA
+                #       then, just do simplify2array, and apply with dim = 1 to get the result
+                # This is only workable for basevar's lapply, not for sparkR
+                
+                #wrap the vecval into simplify2array #wrap it into apply
+                vecval <- as.call(list(as.symbol("simplify2array"), vecval))
+                call <- as.call(list(as.symbol("apply"), vecval, 1, sf))
+                isDenseData <- FALSE 
+            } else {
+                # use vf to process
+                vf <- genVecFunNode(sf, cntxt)
+                call <- as.call(list(vf, vecval))
+                isDenseData <- TRUE #the only place change the list rep into vec rep                
+            }
+        } else { # in sparkR package
+            vf <- genVecFunNode(sf, cntxt)
+            call <- as.call(list(as.symbol("lapplyPartition"), vecval, vf))
+            isDenseData <- TRUE #the only place change the list rep into vec rep                   
+        }
+    } else if(fun_name == "Reduce" && isBaseVar(fun_name, cntxt) 
             && args[[1]] == '+' #only support Reduce add
             && (length(args) == 2 || length(args) == 3 && args[[3]] == 0)) {
         #no need transform args[[1]]
@@ -155,7 +205,30 @@ applycmpCall <- function(call, precntxt) {
             #replace with va_reduceSum(vecval)
             call <- as.call(c(quote(va_reduceSum), vecval))
         }
+    } else if(fun_name == "reduce" && isSparkRVar(fun_name, cntxt)) {
+        #SparkR's reduce is reduce(rdd, func)
+        #no need transform args[[2]], the func
+        #transform data args[[1]]
+        ret <- applycmp(args[[1]], cntxt) 
+        l <- getRetVal(ret) #may be wrapped 
+        cntxt <- ret[[2]] #update local context
+        vecval <- tryGetVecDataBinding(l, cntxt)
         
+        if(is.null(vecval)) { #no need to use lapplyPartition to rewrite
+            call <- as.call(c(fun, l, args[[2]]))
+        } else {
+            #Must transform the data to lapplyPartition with reduce
+            partReduceNode <- quote(lapplyPartition(data, 
+                                                    function(vData) { 
+                                                     list(va_reduce('+', vData))
+                                                    })
+                                    )
+            #change the node
+            partReduceNode[[2]] <- vecval #process the data
+            partReduceNode[[3]][[3]][[2]][[2]][[2]] <- args[[2]] #change the op
+            #gen final node
+            call <- as.call(c(fun, partReduceNode, args[[2]]))
+        }
     } else if(fun_name == "<-" || fun_name == "=") {
         #only handle simple case
         #the police is if the ret[[3]] is TRUE, then we need create an wrapper
