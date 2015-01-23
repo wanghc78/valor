@@ -1,10 +1,10 @@
 Package: vecapply
 Version: 0.1-1
-Title: The R Vec Apply Package
+Title: The R Apply Vectorization Package
 Author: Haichuan Wang <hwang154@illinois.edu>
 Maintainer: Haichuan Wang <hwang154@illinois.edu>
-Description: An experimental package to vectorize apply family functions
-License: BSD
+Description: An experimental package to vectorize apply class of operations in R to improve the performance
+License: GPL-2, GPL-3, BSD
 URL: https://github.com/wanghc78/vecapply
 BugReports: https://github.com/wanghc78/vecapply/issues
 ByteCompile: TRUE

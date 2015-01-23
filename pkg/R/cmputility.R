@@ -440,7 +440,7 @@ isBaseVar <- function(var, cntxt) {
 ## check the variable (basically function names) are from SparkR package
 isSparkRVar <- function(var, cntxt) {
     info <- getInlineInfo(var, cntxt)
-    ( !is.null(info) && (attr(info$frame, "name") == "package:SparkR"))
+    ( !is.null(info) && identical(attr(info$frame, "name"), "package:SparkR"))
 }
 
 

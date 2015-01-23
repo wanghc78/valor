@@ -144,7 +144,9 @@ applycmpCall <- function(call, precntxt) {
     
     if("lapply" == fun_name && length(args) == 2
         && (isBaseVar("lapply", cntxt) || isSparkRVar("lapply", cntxt))
-        && ! as.character(args[[2]]) %in% UnsupportedFuns) {
+        && ( typeof(args[[2]]) == "language" 
+             || ! as.character(args[[2]]) %in% UnsupportedFuns)) {
+        # args[[2]] may be language 
         #in this case, the lapply's argument, input maybe another lapply expr or symbol
 
         isSparkRContext <- isSparkRVar("lapply", cntxt)
@@ -155,7 +157,7 @@ applycmpCall <- function(call, precntxt) {
         
         vecval <- tryGetVecDataBinding(l, cntxt) #try to get the vec rep
         if(is.null(vecval)) {
-            if(isSparkRContext){
+            if(isSparkRContext == TRUE){
                 vecval <- genSparkRVecDataNode(l)
             } else {
                 vecval <- genVecObjectNode(l, isData = TRUE)      
@@ -164,10 +166,10 @@ applycmpCall <- function(call, precntxt) {
         
         ## handle function function
         sf <- args[[2]] #scalar function
-        sf_name <- as.character(sf)
+        sf_name <- if(typeof(sf) == "language") {"_anonymousFun"} else{ as.character(sf) }
         
         # handle either lapply in base package or in SparkR package
-        if(!isSparkRContext) { #base case
+        if(! (isSparkRContext == TRUE)) { #base case
             if(sf_name %in% VectorInputFuns) {
                 #use special handling to denseData as input
                 # idea: if the function take vector as input (sum, which.min, etc.), then vec2list's src must be SoA
