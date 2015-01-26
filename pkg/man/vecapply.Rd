@@ -15,7 +15,7 @@ va_vecClosure(singleObjectFun, options = NULL)
 \arguments{
   \item{expr}{expression that contains statements of lapply calls}
   \item{fun}{function that contains statements of lapply calls}
-  \item{options}{list of vectorization compiling options}
+  \item{options}{list of vectorization compiling options. "options = list(logLevel=0)" will dump more trace info}
   \item{singleObjectFun}{a function that is used to be applied to one single element in lapply}
 }
 \description{

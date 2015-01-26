@@ -231,7 +231,7 @@ va_vecClosure <- function(clos, options = NULL) {
         #add all formals as vecvars
         ret <- veccmp(body, ncntxt)
         body(clos) <- ret[[1]]
-        cat("[va_vecFun: result]"); print(clos)
+        log_warn(cntxt, "[va_vecClosure() result]\n", paste(format(clos), collapse = "\n"))
         clos
     }
     else if (typeof(clos) == "builtin" || type == "special") { 

@@ -132,10 +132,9 @@ applycmp<- function(e, cntxt) {
 }
 
 #It's the scalar context, only care about the lapply/reduce transformation
-applycmpCall <- function(call, precntxt) {
-    cat("[ScalarVisit]Call:", format(call), '\n')
-    
+applycmpCall <- function(call, precntxt) {   
     cntxt <- make.callContext(precntxt, call) #current context
+    log_info(cntxt, "[ScalarVisit]Call:", paste(format(call), collapse = "\n"))
     
     fun <- call[[1]]; fun_name <- as.character(fun)
     args <- call[-1]
@@ -402,7 +401,7 @@ genVecFunNode <- function(fun, cntxt) {
 }
 
 veccmpSym <- function(sym, cntxt) {
-    cat("[VecVisit]Symbol:", sym, '\n')
+    log_info(cntxt, "[VecVisit]Symbol:", sym)
     if(identical(sym, EmptySymbol())) { return(list(sym, cntxt, 0L)) }
     #try to search this symbol in the context's environment.
     #If it is a vector var, return dim = 1, otherwise return 0
@@ -416,12 +415,12 @@ veccmpSym <- function(sym, cntxt) {
 
 veccmpConst <- function(val, cntxt) {
     #constant definetely 
-    cat("[VecVisit]Constant:", format(val), '\n')
+    log_info(cntxt, "[VecVisit]Constant:", paste(format(val), collapse = "\n"))
     list(val, cntxt, 0L) #the second is the dim of this constant
 }
 
 veccmpFormals <- function(forms, cntxt) {
-    cat("[VecVisit]Formals:", names(forms), " <-> ", as.character(forms), '\n')
+    log_info(cntxt, "[VecVisit]Formals:", names(forms), " <-> ", as.character(forms))
     list(forms, cntxt, 0L) #not change forms right now. maybe need vectorize the binding values
 }
 
@@ -430,10 +429,9 @@ veccmpFormals <- function(forms, cntxt) {
 #  In scalar space: identify lapply, and transform it into direct function call
 #  In the vector space, follow the formal's def-use chain, transform all operations into vector form
 veccmpCall <- function(call, precntxt) {
-    cat("[VecVisit]Call:", format(call), '\n')
-    
     cntxt <- make.callContext(precntxt, call)
-
+    log_info(cntxt, "[VecVisit]Call:", paste(format(call), collapse = "\n"))
+    
     fun <- call[[1]]; fun_name <- as.character(fun)
     args <- call[-1]
     
@@ -446,7 +444,7 @@ veccmpCall <- function(call, precntxt) {
     if (fun_name %in% UnsupportedFuns) {
         #unsupported functions, then first need to check the vector symbol usage of the expression
         #then wrapper it as a function, with a mapply
-        cat("  ==>>Call Unsupported fun, gen generic vec wrapper for: ", fun_name, "\n")
+        log_warn(cntxt, "  ==>>Call Unsupported fun, gen generic vec wrapper for: ", fun_name)
         vecvars <- findExprVecVarUse(call, cntxt) #note typically there is no write
         if(length(vecvars) > 0) {
             #build the function, with the whole call

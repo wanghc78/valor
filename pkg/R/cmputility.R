@@ -14,7 +14,12 @@
 ## Compiler options
 ##
 
+LOG_LEVEL_INFO <- 0 #log every thing 
+LOG_LEVEL_WARN <- 1 #only log warning
+
+
 compilerOptions <- new.env(hash = TRUE, parent = emptyenv())
+compilerOptions$logLevel <- LOG_LEVEL_WARN
 compilerOptions$optimize <- 3
 compilerOptions$suppressAll <- FALSE
 compilerOptions$suppressUndefined <-
@@ -484,6 +489,7 @@ make.toplevelContext <- function(cenv, options = NULL)
                     needRETURNJMP = FALSE,
                     env = cenv,
                     optimize = getCompilerOption("optimize", options),
+                    logLevel = getCompilerOption("logLevel", options),
                     suppressAll = getCompilerOption("suppressAll", options),
                     suppressUndefined = getCompilerOption("suppressUndefined",
                             options),
@@ -491,6 +497,8 @@ make.toplevelContext <- function(cenv, options = NULL)
                     localbindings = list(), #local Basic Block's conservertive bindings
                     stop = function(msg, cntxt)
                         stop(simpleError(msg, cntxt$call)),
+                    log = function(cntxt, levelStr, ...)
+                        cat(paste(levelStr, ":", sep = ""), ..., '\n'),
                     warn = function(x, cntxt) cat(paste("Note:", x, "\n"))),
             class = "compiler_context")
 
@@ -511,6 +519,7 @@ make.functionContext <- function(cntxt, forms, body) {
     nenv <- funEnv(forms, body, cntxt)
     ncntxt <- make.toplevelContext(nenv)
     ncntxt$optimize <- cntxt$optimize
+    ncntxt$logLevel <- cntxt$logLevel
     ncntxt$suppressAll <- cntxt$suppressAll
     ncntxt$suppressUndefined <- cntxt$suppressUndefined
     ncntxt
@@ -553,6 +562,18 @@ make.loopContext <- function(cntxt, loop.label, end.label) {
 ##
 ## Compiler warnings
 ##
+
+log_info <- function(cntxt, ...) {
+    if(cntxt$logLevel <= LOG_LEVEL_INFO) {
+        cntxt$log(cntxt, "INFO", ...)
+    }
+}
+
+log_warn <- function(cntxt, ...) {
+    if(cntxt$logLevel <= LOG_LEVEL_WARN) {
+        cntxt$log(cntxt, "WARN", ...)
+    }
+}
 
 suppressAll <- function(cntxt)
     identical(cntxt$suppressAll, TRUE)
