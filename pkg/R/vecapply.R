@@ -24,7 +24,8 @@ getRetVal <- function(ret) {
 
 #input a list. If it is not a symobl, just add the wrapper
 #if it is a symbol gen
-# { if(! exists(".va.listVal", inherits = FALSE) || !identical(.vasrc.listVal, listVal)) {
+# { if(! (exists(".va.listVal", inherits = FALSE) 
+#         && (is.null(.vasrc.listVal) || identical(.vasrc.listVal, listVal))) ) {
 #      .va.listVal <- va_list2vec(listVal)
 #      .vasrc.listVal <- listVal
 #   }
@@ -41,7 +42,8 @@ genVecObjectNode <- function(listVal, isData = TRUE) {
         vecValSym <- as.symbol(vecValName)
         vecSrcSym <- as.symbol(paste(".vasrc", listVal_name, sep='.'))
         ret <- quote({
-                    if(! exists(".va.listVal", inherits = FALSE) || !identical(.vasrc.listVal, listVal) ) {
+                    if(! (exists(".va.listVal", inherits = FALSE) 
+                          && (is.null(.vasrc.listVal) || identical(.vasrc.listVal, listVal))) ) {
                         .va.listVal <- va_list2vec(listVal)
                         .vasrc.listVal <- listVal
                     }
@@ -49,12 +51,16 @@ genVecObjectNode <- function(listVal, isData = TRUE) {
                 }
         )
         #now directly modify the quote's AST
-        ret[[2]][[2]][[2]][[2]][[2]] <- vecValName
-        ret[[2]][[2]][[3]][[2]][[2]] <- vecSrcSym
-        ret[[2]][[2]][[3]][[2]][[3]] <- listVal
-        ret[[2]][[3]][[2]][[2]] <- vecValSym
-        ret[[2]][[3]][[2]][[3]][[1]] <- transfun
-        ret[[2]][[3]][[2]][[3]][[2]] <- listVal
+        ret[[2]][[2]][[2]][[2]][[2]][[2]] <- vecValName #exisit
+        ret[[2]][[2]][[2]][[2]][[3]][[2]][[2]][[2]] <- vecSrcSym #is.null node
+        ret[[2]][[2]][[2]][[2]][[3]][[2]][[3]][[2]] <- vecSrcSym #identical arg1
+        ret[[2]][[2]][[2]][[2]][[3]][[2]][[3]][[3]] <- listVal #identical arg2
+#        if(!isData) { #function node, remove is.null check
+#            ret[[2]][[2]][[2]][[2]][[3]] <- ret[[2]][[2]][[2]][[2]][[3]][[2]][[3]]
+#        }
+        ret[[2]][[3]][[2]][[2]] <- vecValSym  #if block, 1st assign's LHS
+        ret[[2]][[3]][[2]][[3]][[1]] <- transfun #if block, 1st assign's RHS fun
+        ret[[2]][[3]][[2]][[3]][[2]] <- listVal #if block, 1st assign's RHS fun
         ret[[2]][[3]][[3]][[2]] <-  vecSrcSym
         ret[[2]][[3]][[3]][[3]] <- listVal
         ret[[3]] <- vecValSym
@@ -65,7 +71,8 @@ genVecObjectNode <- function(listVal, isData = TRUE) {
 }
 
 # SparkR's data vectorization should be
-# { if(! exists(".va.listVal", inherits = FALSE) || !identical(.vasrc.listVal, listVal)) {
+# { if(! (exists(".va.listVal", inherits = FALSE) 
+#         && (is.null(.vasrc.listVal) || identical(.vasrc.listVal, listVal))) ) {
 #                .va.listVal <- cache(lapplyPartition(listVal,
 #                                                    va_list2vec)) # cache here
 #                .vasrc.listVal <- listVal
@@ -79,7 +86,8 @@ genSparkRVecDataNode <- function(listVal) {
         vecValName <- paste(".va", listVal_name, sep='.')
         vecValSym <- as.symbol(vecValName)
         vecSrcSym <- as.symbol(paste(".vasrc", listVal_name, sep='.'))
-        ret <- quote({ if(! exists(".va.listVal", inherits = FALSE) || !identical(.vasrc.listVal, listVal)) {
+        ret <- quote({ if(! (exists(".va.listVal", inherits = FALSE) 
+                                && (is.null(.vasrc.listVal) || identical(.vasrc.listVal, listVal))) ) {
                         .va.listVal <- cache(lapplyPartition(listVal,
                                         va_list2vec)) # cache here
                          .vasrc.listVal <- listVal
@@ -87,9 +95,10 @@ genSparkRVecDataNode <- function(listVal) {
                        .va.listVal
                      })
         #now directly modify the quote's AST
-        ret[[2]][[2]][[2]][[2]][[2]] <- vecValName
-        ret[[2]][[2]][[3]][[2]][[2]] <- vecSrcSym
-        ret[[2]][[2]][[3]][[2]][[3]] <- listVal
+        ret[[2]][[2]][[2]][[2]][[2]][[2]] <- vecValName #exisit
+        ret[[2]][[2]][[2]][[2]][[3]][[2]][[2]][[2]] <- vecSrcSym #is.null node
+        ret[[2]][[2]][[2]][[2]][[3]][[2]][[3]][[2]] <- vecSrcSym #identical arg1
+        ret[[2]][[2]][[2]][[2]][[3]][[2]][[3]][[3]] <- listVal #identical arg2
         ret[[2]][[3]][[2]][[2]] <- vecValSym
         ret[[2]][[3]][[2]][[3]][[2]][[3]] <- transfun 
         ret[[2]][[3]][[2]][[3]][[2]][[2]] <- listVal
@@ -235,20 +244,36 @@ applycmpCall <- function(call, precntxt) {
         #the police is if the ret[[3]] is TRUE, then we need create an wrapper
         #  { .va.left <- noWrapVector, change the assign to delayedAssign}
         
+    
         lhs <- getAssignedVar(call)
         ret <- applycmp(args[[2]], cntxt)
         rhs <- getRetVal(ret)
         cntxt <- ret[[2]]
         if (ret[[3]]) {  #dense value returned
-            #create a temp variable
+            #create a temp variable .va.lhsname
+            #note the delayed assign's 2nd para(the value) should also defne .vasrc.data
             tmpVarName <- paste(".va", lhs, sep=".") #.va.lhs name
+            tmpVarSrcName <- paste(".vasrc", lhs, sep=".") #.vasrc.lhs name
+            #Gen dense expr assign
             tmpAssignStmt <- as.call(c(quote(`<-`), as.symbol(tmpVarName), ret[[1]]))
-            delayAssignRHS <- as.call(c(quote(va_vec2list), as.symbol(tmpVarName)))
-            delayAssignStmt <- as.call(c(quote(delayedAssign), lhs, delayAssignRHS))
+            #Gen clean the src stmt .vasrc.lhs <- NULL
+            cleanSrcStmt <- as.call(list(quote(`<-`), as.symbol(tmpVarSrcName), quote(NULL)))
+            #Gen the real delayed assign
+            # delayedAssign("lhs", .vasrc.lhs <- vec2list(.va.lhs))
+            # the reason of RHS is an expr: update .varsc.lhs
+            delayAssignValRHS <- as.call(c(quote(va_vec2list), as.symbol(tmpVarName)))
+            # Hack for SparkR context
+            if(isSparkRVar("lapply", cntxt)) { #the lapply is from sparkR
+                # delayedAssign("lhs", .vasrc.lhs <- lapplyParition(.va.lhs, vec2list)))
+                delayAssignValRHS <- as.call(c(as.symbol("lapplyPartition"), as.symbol(tmpVarName), quote(va_vec2list)))
+            }
+            
+            delayAssignValStmt <- as.call(c(quote(`<-`), as.symbol(tmpVarSrcName), delayAssignValRHS))
+            delayAssignStmt <- as.call(c(quote(delayedAssign), lhs, delayAssignValStmt))
             #finally the wrapper "{"
-            call <- as.call(c(quote(`{`), tmpAssignStmt, delayAssignStmt))
+            call <- as.call(c(quote(`{`), tmpAssignStmt, cleanSrcStmt, delayAssignStmt))
             #and the binding is 
-            cntxt$localbindings[[lhs]] <- delayAssignRHS #add to the vec2list result as binding
+            cntxt$localbindings[[lhs]] <- delayAssignValRHS #add to the vec2list result as binding
         } else {
             cntxt$localbindings[[lhs]] <- rhs #add one binding
             call <- as.call(c(fun, args[[1]], rhs))
@@ -561,29 +586,38 @@ veccmpCall <- function(call, precntxt) {
         }
     } else if(fun_name == "[["){
         #only consider args[[1]] and args[[2]]
-        # val[[idx]]: 4 combins: 
+        # val[[idx]]: 4 combinations. 
         #  val scalar, idx: scalar. nothing
-        #  val vector, idx scalar/vector. cannot handle right now
         #  val scalar, idx: vector. ==> vectorize val, use [] to replace [[]]. return vector
+        #  val vector, idx scalar. no need change
+        #  val vector, idx vector ==> cannot support right now
+
         ret <- veccmp(args[[1]], cntxt)
         args[[1]] <- ret[[1]]
         cntxt <- ret[[2]]
-        if(ret[[3]] > 0) {
-            cntxt$stop(gettext("[Error]Cannot handle [[ index a vector list"),
-                    cntxt)
-        }
+        valVecFlag <- ret[[3]]
         
         ret <- veccmp(args[[2]], cntxt)
         args[[2]] <- ret[[1]]
         cntxt <- ret[[2]]
-        vecFlag <- ret[[3]]
-        if(vecFlag > 0) {
-            #must first wrap args[[1]] with data wrapper
-            fun <- quote(`[`) #change fun to []
-            #And should consider dynamic linkage optimization
-            args[[1]] <- genVecObjectNode(args[[1]], isData = TRUE)
+        idxVecFlag <- ret[[3]]
+        
+        if(valVecFlag > 0) { #val is changed to vector object
+            if(idxVecFlag > 0) {
+                cntxt$stop(gettext("[Error]Cannot handle [[ vector index of a vector list"),
+                        cntxt)
+            }
+            #no need change
+            vecFlag <- valVecFlag
+        } else { #val still scalar object
+            if(idxVecFlag > 0) {
+                #must first wrap args[[1]] with data wrapper
+                fun <- quote(`[`) #change fun to []
+                #And should consider dynamic linkage optimization
+                args[[1]] <- genVecObjectNode(args[[1]], isData = TRUE)
+            }
+            vecFlag <- idxVecFlag
         }
-    
     } else if(fun_name == "$"){
         #only consider args[[1]] and args[[2]]
         #args[[2]] must be a scalar, other wise cannot handle
@@ -734,7 +768,7 @@ veccmpCall <- function(call, precntxt) {
         cntxt <- ret[[2]]
         vecFlag <- ret[[3]]  #even a function could be changed to vector
     } 
-    else if(fun_name == "lapply" && isBaseVar("lapply", cntxt)) {
+    else if(fun_name == "lapply") { #here only check lapply, could be SparkR's lapply 
         #invector context, lapply or other apply, if the list is vectorized. then it cannot handle
         #if the function is vectorized, then the result is changed to vectorized. but lapply will not be changed.
         dimsret <- integer(length(args))
