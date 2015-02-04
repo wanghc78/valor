@@ -315,3 +315,80 @@ va_which.max <- function(vData) {
         lapply(va_vec2list(vData), which.max)
     }
 }
+
+
+#######################################################################
+# The below are vector functions for SparkR functions
+
+
+## va_filter is used to filter a vecotrized object, and it supports lists
+# v the vectorized object. cond the boolean condition
+va_filter <- function(v, cond) {
+    if(is.list(v)) {
+        v_len <- length(v)
+        #filter each components of v into list
+        for(i in 1:v_len){
+            v[[i]] <- va_filter(v[[i]])
+        }
+        return(v)
+    }
+    
+    #only support v as vector or matrix
+    #TODO: think about how to access the 1st slice of a multi-dim array
+    v_dim <- dim(v) 
+    if(is.null(v_dim)) {
+        v[cond]
+    } else {
+        n <- v_dim[1] #length
+        ndim <- length(v_dim)
+        if(ndim == 1) {
+          res <- v[cond]
+        } else if(ndim == 2) {
+            res <- v[cond,]
+        } else if(ndim == 3){
+            res <- v[cond,,]
+        } else {
+            stop("[ERROR]Cannot support high-dim's va_filter")
+        }
+        
+        if(is.null(dim(res)) || length(dim(res))<ndim) {
+            v_dim[1] <- 1
+            dim(res) <- v_dim
+        }
+        res
+    }   
+}
+
+
+# vData is a list (transformed from a list of list
+# [[1]]: the key vector
+# [[2]]: value vector/matrix
+# return a list of {{key1, freq1}, {key2, freq2}, ...}
+# Then the caller must use collect(reduceByKey(lapplyPartition(inputData, va_countByKey)), "+") to get the result
+va_countByKey <-function(vData) {
+    # get the key
+    key <- vData[[1]]
+    stopifnot(is.atomic(key)) #key must be atomic
+    newkey <- unique(key)
+    numkey <- length(newkey)
+    lapply(newkey, function(k){list(k,sum(k==key))})
+}
+
+
+# vData is a list (transformed from a list of list
+# [[1]]: the key vector
+# [[2]]: value vector/matrix
+# return a list of {{key1, reducedv1}, {key2, reducedv2}, ...}
+# Then the caller must use reduceByKey(lapplyPartition([inputData], function(part){va_reduceByKey(part, [op])), op, clusters) to get the result
+va_reduceByKey <-function(vData, op) {
+    key <- vData[[1]]
+    value <- vData[[2]]
+    stopifnot(is.atomic(key)) #key must be atomic
+    newkey <- unique(key)
+    lapply(newkey, function(k){
+                list(k,
+                  va_reduce(op, va_filter(value, k==key))
+                )
+            })
+}
+

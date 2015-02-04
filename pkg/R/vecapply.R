@@ -113,17 +113,25 @@ genSparkRVecDataNode <- function(listVal) {
 }
 
 # input: aList is the list from a symbol or an expression
+# the problem here, aList may be a var's name, 
+#  or a var's name wrapped inside va_vec2list. Reason: a lapply result is directly sent to the consumer(e.g. Reduce)
 tryGetVecDataBinding <- function(aList, cntxt) {
     vecval <- NULL
+    
+    #if aList is a symbol, try to lookup the symbol in the pool first
     if(typeof(aList) == 'symbol') {
-        listExpr = cntxt$localbindings[[as.character(aList)]]
-        if(!is.null(listExpr) && typeof(listExpr) == "language"
-                && as.character(listExpr[[1]]) == "va_vec2list") {
-            vecval = listExpr[[2]] #should be a symbol with .va. prefix
+        aList = cntxt$localbindings[[as.character(aList)]]
+    }
+    
+    #now aList is an expression either va_vec2list(.va.list_dara)
+    # or lapplyPartition(.va.list_data, va_vec2list)
+    if(!is.null(aList)  && typeof(aList) == "language"){
+        fun_name <- as.character(aList[[1]])
+        if(fun_name == "va_vec2list") {
+            vecval <- aList[[2]]
+        } else if(fun_name == "lapplyPartition" && as.character(aList[[3]]) == "va_vec2list"){
+            vecval <- aList[[2]]
         }
-        
-    } else if(typeof(aList) == "language" && as.character(aList[[1]]) == "va_vec2list") {
-        vecval = aList[[2]]
     }
     vecval
 }
@@ -238,6 +246,48 @@ applycmpCall <- function(call, precntxt) {
             partReduceNode[[3]][[3]][[2]][[2]][[2]] <- args[[2]] #change the op
             #gen final node
             call <- as.call(c(fun, partReduceNode, args[[2]]))
+        }
+    } else if(fun_name == "countByKey" && isSparkRVar(fun_name, cntxt)) {
+        print("checked countByKey")
+        #Transform count by key: countByKey(rdd)
+            ret <- applycmp(args[[1]], cntxt) 
+            l <- getRetVal(ret) #may be wrapped
+            cntxt <- ret[[2]]
+            vecval <- tryGetVecDataBinding(l, cntxt)
+            if(is.null(vecval)) {
+                print("veccall is null")
+                call <- as.call(c(fun, l)) # no need change anything here
+            } else {
+                #use 
+                call <- quote(collect(reduceByKey(lapplyPartition(inputData, va_countByKey), "+", numPartitions(inputData))))
+                call[[2]][[2]][[2]] <- vecval #the lapplyParition's input
+                call[[2]][[4]][[2]] <- vecval #the numPartitions' input
+            }
+    
+    } else if(fun_name == "reduceByKey" && isSparkRVar(fun_name, cntxt)) {
+        print("checked reduceByKey")
+        #Transform count by key: reduceByKey(rdd, op, numPart)
+        ret <- applycmp(args[[1]], cntxt) 
+        l <- getRetVal(ret) #may be wrapped
+        cntxt <- ret[[2]]
+        vecval <- tryGetVecDataBinding(l, cntxt)
+        
+        #no need visit args[[2]] the op 
+        # visit args[[3]]
+        ret <- applycmp(args[[3]], cntxt)
+        args[[3]] <- getRetVal(ret) #may be wrapped
+        cntxt <- ret[[2]]
+        
+        if(is.null(vecval)) {
+            call <- as.call(c(fun, l, args[[2]], args[[3]])) # no need change anything here
+        } else {
+            #use 
+            call <- quote(
+                    reduceByKey(lapplyPartition(inputData, function(part){va_reduceByKey(part, op)}), op, numPart))
+            call[[2]][[2]] <- vecval #the lapplyParition's input
+            call[[2]][[3]][[3]][[2]][[3]] <- args[[2]] # the op in the annonymous fun
+            call[[3]] <- args[[2]] # outer op
+            call[[4]] <- args[[3]] # outer numPart
         }
     } else if(fun_name == "<-" || fun_name == "=") {
         #only handle simple case
