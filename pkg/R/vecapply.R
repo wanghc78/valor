@@ -158,7 +158,10 @@ applycmpCall <- function(call, precntxt) {
     
     isDenseData <- FALSE #only lapply will change it
     
-    if("lapply" == fun_name && length(args) == 2
+    if (fun_name == "va_debug") { 
+        # a testing node. no need transform it at all
+        call[[1]] <- quote(`{`)
+    } else if("lapply" == fun_name && length(args) == 2
         && (isBaseVar("lapply", cntxt) || isSparkRVar("lapply", cntxt))
         && ( typeof(args[[2]]) == "language" 
              || ! as.character(args[[2]]) %in% UnsupportedFuns)) {
@@ -248,7 +251,6 @@ applycmpCall <- function(call, precntxt) {
             call <- as.call(c(fun, partReduceNode, args[[2]]))
         }
     } else if(fun_name == "countByKey" && isSparkRVar(fun_name, cntxt)) {
-        print("checked countByKey")
         #Transform count by key: countByKey(rdd)
             ret <- applycmp(args[[1]], cntxt) 
             l <- getRetVal(ret) #may be wrapped
@@ -265,7 +267,6 @@ applycmpCall <- function(call, precntxt) {
             }
     
     } else if(fun_name == "reduceByKey" && isSparkRVar(fun_name, cntxt)) {
-        print("checked reduceByKey")
         #Transform count by key: reduceByKey(rdd, op, numPart)
         ret <- applycmp(args[[1]], cntxt) 
         l <- getRetVal(ret) #may be wrapped
@@ -516,7 +517,12 @@ veccmpCall <- function(call, precntxt) {
     #    If RHS is vec, add the LHS into vector list
     #
     # If no. normal transform
-    if (fun_name %in% UnsupportedFuns) {
+    
+    if (fun_name == "va_debug") { 
+        # a testing node. no need transform it at all
+        fun <- quote(`{`)
+        vecFlag <- 0L # no change
+    } else if (fun_name %in% UnsupportedFuns) {
         #unsupported functions, then first need to check the vector symbol usage of the expression
         #then wrapper it as a function, with a mapply
         log_warn(cntxt, "  ==>>Call Unsupported fun, gen generic vec wrapper for: ", fun_name)

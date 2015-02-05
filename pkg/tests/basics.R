@@ -199,3 +199,18 @@ testSimplyAssign_1 <- function(a) {
     r <- a
 }
 va_vecClosure(testSimplyAssign_1)
+
+#Testing ignore va_debug node
+test_va_debug1 <- function() {
+    aList <- list(1:2, 3:4, 5:6)
+    va_debug(bList <- lapply(aList, function(a){a+1}))
+    cList <- lapply(aList, function(a){a+1})
+}
+
+va_cmpfun(test_va_debug1)
+
+test_va_debug2 <- function(a) {
+    r1 <- a[1]
+    va_debug(print(a[1]))
+}
+va_vecClosure(test_va_debug2)

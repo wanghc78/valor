@@ -6,6 +6,12 @@
 ############## Runtime functions ##############
 # All VecApply runtime functions (exported) has a prefix "va_"
 
+# An wrapper function. The compiler transformation will ingore it.
+va_debug <- function(expr) {
+    expr
+}
+
+
 # Return the length of the vector
 # v must be a List(SoA)       --> return the length of the list
 #        or a multi-dim array --> return the first dim size
@@ -27,7 +33,6 @@ va_vecLen <- function(v) { #v must be vec, or SoA
 va_repVecData <- function(data, ref) {
     stopifnot(is.atomic(data)) #input must be atomic
     n <- va_vecLen(ref) #need calculate the ref's length
-    
     if(n > 1) {
         vdata <- rep(data, each=n)
         data_len = length(data)
