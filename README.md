@@ -1,6 +1,6 @@
-# Vectorization of Apply class of Operations in R
+# VALOR - Vectorization of AppLy for Interpretation Overhead Reduction of R
 
-*vecapply* is an experimental R package that transforms Apply class of 
+*valor* is an experimental R package that transforms Apply class of 
 operations into a direct function call to improve the performance, like
 ```
 lapply(1:5, function(x){x^2}) ===> (1:5)^2
@@ -16,7 +16,7 @@ lapply(aList, aFun)
 ```
 where
 
-* _aList_ is transformed into a vector representation, like list(1,2,3) ===> 1:3
+* _aList_ is transformed into a vector representation, like `list(1,2,3)` ===> `1:3`
 * _aFun_ is transformed into a function that can process a vector input in a batch
 * The final result from _aFun_ is transformed back as a list form to conform to the original _lapply_ output.
 
@@ -31,15 +31,15 @@ install.packages("devtools")
 library(devtools)
 ```
 
-Then you can install the latest trial version of  _vecapply_ package from Github directly
+Then you can install the latest trial version of  _valor_ package from Github directly
 ```
-install_github("wanghc78/vecapply", subdir="pkg")
+install_github("wanghc78/valor", subdir="pkg")
 library(vecapply)
 ```
 
 
 ## Usage Guide
-*Warning*: The package is still in its early phase, can only support lapply transformation, 
+*Warning*: The package is still in its early phase, and it can only support _lapply_ transformation, 
 and cannot handle arbitrary cases. You comments and suggestions are highly welcome.
 
 The package only provide two simple interfaces
