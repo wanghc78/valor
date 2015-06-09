@@ -70,7 +70,7 @@ The benchmark codes are located under _~/paper23/benchmarks/algorithm_. The scri
   
 ### Use Virtual Machine
 
-The virtual machine image is a Linux Fedora 16 x86 image with 4G memory as the initial setup. Username/passowrd: oopsla2015/paper23. R, valor package and benchmark codes have been installed in the virtual machine following the previous document. The valor package and benchmarks are stored in paper23 directory under oopsla2015's home directory.
+The URL pointing the artifact at https://oopsla15aec.hotcrp.com online submission system is the virtualbox image file. The virtual machine image is a Linux Fedora 16 x86 image with 4G memory as the initial setup. Username/passowrd: oopsla2015/paper23. R, valor package and benchmark codes have been installed in the virtual machine following the previous document. The valor package and benchmarks are stored in paper23 directory under oopsla2015's home directory.
 
 ## III. Simple Translation Examples
 
