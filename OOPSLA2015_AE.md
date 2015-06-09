@@ -345,6 +345,7 @@ The above script is stored as bench_tiling.sh
 The source code is under pkg sub-directory, where the structure follows standard R package structure. 
 
 | Filename |  Notes |
+|----------|--------|
 |man\vecapply.Rd| help document used in R ?va_cmpfun command |
 |R\cmputility.R| Valor Compiler utility functions |
 |R\runtime.R| Valor runtime function implementations, such as PERM\_DOWN(), PERM\_UP() implementations|
