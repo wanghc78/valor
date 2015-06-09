@@ -133,7 +133,7 @@ We can test 1M input and 15 iterations with the following command. The benchmark
 
 In the vectorized version, there is one line showing "[INFO]va\_list2vec Time =". And the time is the data permutation time (defined as "PERM\_DOWN" in the paper). This time is used to calculate the data transformation overhead (Paper section 5.4). 
 
-You can append `| grep "Time ="` in the command line to only extract the time info. The time of iteration 6~15 are used to calculate the per-iteration time for LR iterative algorithm. And you can append `| ../../../valor/report.py` in the command line to report the summarized information, like "[Iterative]AvgIterTime = 3.594200 Overhead = 345.345%". The report.py is temporarily stored in the valor package only for the OOPSLA Artificats evaluation. Please make sure in your command the correct path location for report.py.
+You can append `| grep "Time ="` in the command line to only extract the time info. The time of iteration 6~15 are used to calculate the per-iteration time for LR iterative algorithm. And you can append `| ../../../valor/report.py` in the command line to report the summarized information, like "[Iterative]AvgIterTime = 3.594200 Overhead = 345.345%". The report.py is temporarily stored in the valor package only for the OOPSLA Artificats Evaluation. Please make sure the correct path location of report.py in your command.
 
 ***Note***: In cygwin environment, the pipe system for R doesn't work correctly. You may need insert ` | tee /dev/null` before grep or report.py to correct the pipe issue.
  
@@ -150,31 +150,198 @@ Similar to testing iterative algorithm, you can append `| grep "Time ="` or `| .
 
 ### Vectorization Speedup and Overhead Evaluation (Paper Section 5.3/5.4)
 
-The following commands are used to reproduce the time measured in Section 5.3 and 5.4
+Suppose you are in the directory of "~/paper23/benchmarks/algorithm", the following commands could be used to reproduce the time measured in Section 5.3 and 5.4
 
 #### Iterative algorithm
 
 ```bash
-
+cd ICA
+echo ICA nonVec 1M samples, 15 iterations
+Rscript --vanilla ica_lapply.R 1000000 15 | tee /dev/null | ../../../valor/report.py
+echo ICA Vec 1M samples, 15 iterations
+Rscript --vanilla ica_lapply_cmp.R 1000000 15 | tee /dev/null | ../../../valor/report.py
+cd ..
+cd k-means
+echo k-Means nonVec 1M points, 10 cluster, 15 iterations
+Rscript --vanilla k-means-1D_lapply.R 1000000 10 15 | tee /dev/null | ../../../valor/report.py
+echo k-Means Vec 1M points, 10 cluster, 15 iterations
+Rscript --vanilla k-means-1D_lapply_cmp.R 1000000 10 15 | tee /dev/null | ../../../valor/report.py
+echo k-Means-nD nonVec 1M 3D points, 10 cluster, 15 iterations
+Rscript --vanilla k-means_lapply.R 1000000 10 3 15 | tee /dev/null | ../../../valor/report.py
+echo k-Means-nD Vec 1M 3D points, 10 cluster, 15 iterations
+Rscript --vanilla k-means_lapply_cmp.R 1000000 10 3 15 | tee /dev/null | ../../../valor/report.py
+cd ..
+cd LogitRegression
+echo LogitReg nonVec 1M points, 15 iterations
+Rscript --vanilla LogitRegre-1var_lapply.R 1000000 15 | tee /dev/null | ../../../valor/report.py
+echo LogitReg Vec 1M points, 15 iterations
+Rscript --vanilla LogitRegre-1var_lapply_cmp.R 1000000 15 | tee /dev/null | ../../../valor/report.py
+echo LogitReg-n nonVec 1M length 10 vec variable, 15 iterations
+Rscript --vanilla LogitRegre_lapply.R 1000000 10 15 | tee /dev/null | ../../../valor/report.py
+echo LogitReg-n Vec 1M length 10 vec variable, 15 iterations
+Rscript --vanilla LogitRegre_lapply_cmp.R 1000000 10 15 | tee /dev/null | ../../../valor/report.py
+cd ..
+cd LR
+echo LR nonVec 1M points, 15 iterations
+Rscript --vanilla LR-1var_lms_lapply.R 1000000 15 | tee /dev/null | ../../../valor/report.py
+echo LR Vec 1M points, 15 iterations
+Rscript --vanilla LR-1var_lms_lapply_cmp.R 1000000 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n nonVec 1M length 10 vec variable, 15 iterations
+Rscript --vanilla LR_lms_lapply.R 1000000 10 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n Vec 1M length 10 vec variable, 15 iterations
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 10 15 | tee /dev/null | ../../../valor/report.py
+cd ..
 ```
 
 #### Direct Algorithm
 
 ```bash
-
+cd k-NN
+echo NN nonVec 10k 3D Training samples, 10K 3D testing samples, 10 clusters
+Rscript --vanilla NN_lapply.R 10000 10000 10 | tee /dev/null | ../../../valor/report.py
+echo NN Vec 10k 3D Training samples, 10K 3D testing samples, 10 clusters
+Rscript --vanilla NN_lapply_cmp.R 10000 10000 10 | tee /dev/null | ../../../valor/report.py
+echo k-NN nonVec 10k 3D Training samples, 10K 3D testing samples, 10 clusters, k=5
+Rscript --vanilla k-NN_lapply.R 10000 10000 10 5 | tee /dev/null | ../../../valor/report.py
+echo k-NN Vec 10k 3D Training samples, 10K 3D testing samples, 10 clusters, k=5
+Rscript --vanilla k-NN_lapply_cmp.R 10000 10000 10 5 | tee /dev/null | ../../../valor/report.py
+cd ..
+cd LR
+echo LR-OLS nonVec 1M points
+Rscript --vanilla LR-1var_ols_lapply.R 1000000 | tee /dev/null | ../../../valor/report.py
+echo LR-OLS Vec 1M points
+Rscript --vanilla LR-1var_ols_lapply_cmp.R 1000000 | tee /dev/null | ../../../valor/report.py
+echo LR-OLS-n nonVec 1M length 10 vec variable
+Rscript --vanilla LR_ols_lapply.R 1000000 10| tee /dev/null | ../../../valor/report.py
+echo LR-OLS-n Vec 1M length 10 vec variable
+Rscript --vanilla LR_ols_lapply_cmp.R 1000000 10 | tee /dev/null | ../../../valor/report.py
+cd ..
+cd Pi
+echo nonVec Monte Carlo 1M points
+Rscript --vanilla Pi_lapply.R 1000000 | tee /dev/null | ../../../valor/report.py
+echo Vec Monte Carlo 1M points
+Rscript --vanilla Pi_lapply.R 1000000 | tee /dev/null | ../../../valor/report.py
+cd ..
+cd PCA
+echo nonVec PCA 1M length 10 vector samples
+Rscript --vanilla PCA_lapply.R 1000000 10 | tee /dev/null | ../../../valor/report.py
+echo nonVec PCA 1M length 10 vector samples
+Rscript --vanilla PCA_lapply.R 1000000 10 | tee /dev/null | ../../../valor/report.py
+cd ..
 ```
 
+The two scripts are also saved as "bench_iter.sh" and "bench_direct.sh" in the algorithm directory.
 
 ### Vectorization of Nested Apply Functions Evaluation (Paper Section 5.5)
 
+The base nonVec time and the **Outer Apply** schema's time could be grappbed from the above section. The following commands can be used to get the **Inner Apply** and **Both Applys**'s time.
+
+```bash
+cd k-means
+echo k-Means Inner Apply Vec 1M points, 10 cluster, 15 iterations
+Rscript --vanilla k-means-1D_lapply_mtrans_level2.R 1000000 10 15 | tee /dev/null | ../../../valor/report.py
+echo k-Means Both Applys Vec 1M points, 10 cluster, 15 iterations
+Rscript --vanilla k-means-1D_lapply_mtrans_opt.R 1000000 10 15 | tee /dev/null | ../../../valor/report.py
+echo k-Means-nD Inner Apply Vec 1M 3D points, 10 cluster, 15 iterations
+Rscript --vanilla k-means_lapply_mtrans_level2.R 1000000 10 3 15 | tee /dev/null | ../../../valor/report.py
+echo k-Means-nD Inner Applys Vec 1M 3D points, 10 cluster, 15 iterations
+Rscript --vanilla k-means_lapply_mtrans_opt.R 1000000 10 3 15 | tee /dev/null | ../../../valor/report.py
+cd ..
+cd k-NN
+echo NN Inner Apply Vec 10k 3D Training samples, 10K 3D testing samples, 10 clusters
+Rscript --vanilla NN_lapply_mtrans_level2.R 10000 10000 10 | tee /dev/null | ../../../valor/report.py
+echo NN Both Applys Vec 10k 3D Training samples, 10K 3D testing samples, 10 clusters
+Rscript --vanilla NN_lapply_mtrans.R 10000 10000 10 | tee /dev/null | ../../../valor/report.py
+echo k-NN Inner Apply Vec 10k 3D Training samples, 10K 3D testing samples, 10 clusters, k=5
+Rscript --vanilla k-NN_lapply_mtrans_level2.R 10000 10000 10 5 | tee /dev/null | ../../../valor/report.py
+echo k-NN Both Applys Vec 10k 3D Training samples, 10K 3D testing samples, 10 clusters, k=5
+Rscript --vanilla k-NN_lapply_mtrans.R 10000 10000 10 5 | tee /dev/null | ../../../valor/report.py
+cd ..
+```
+
+***Note***: The current compiler in valor package doesn't support the two testing schemas transformation. The scripts used in the test are manually generated.    
+
 ### Vector Programming in applications Evaluation (Paper Section 5.6)
+
+The benchmarks LR-n, LogitReg-n, k-Means-nD, LR-OLS_n can change the value of n to test the use of vector programming in the original code. Here, the LR is used as the example. 
+
+```bash
+cd LR
+echo LR-n 1M samples, 15 iterations. n = 1
+Rscript --vanilla LR_lms_lapply.R 1000000 1 15 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 1 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n 1M samples, 15 iterations. n = 2
+Rscript --vanilla LR_lms_lapply.R 1000000 2 15 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 2 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n 1M samples, 15 iterations. n = 3
+Rscript --vanilla LR_lms_lapply.R 1000000 3 15 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 3 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n 1M samples, 15 iterations. n = 4
+Rscript --vanilla LR_lms_lapply.R 1000000 4 15 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 4 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n 1M samples, 15 iterations. n = 5
+Rscript --vanilla LR_lms_lapply.R 1000000 5 15 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 5 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n 1M samples, 15 iterations. n = 6
+Rscript --vanilla LR_lms_lapply.R 1000000 6 15 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 6 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n 1M samples, 15 iterations. n = 7
+Rscript --vanilla LR_lms_lapply.R 1000000 7 15 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 7 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n 1M samples, 15 iterations. n = 8
+Rscript --vanilla LR_lms_lapply.R 1000000 8 15 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 8 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n 1M samples, 15 iterations. n = 9
+Rscript --vanilla LR_lms_lapply.R 1000000 9 15 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 9 15 | tee /dev/null | ../../../valor/report.py
+echo LR-n 1M samples, 15 iterations. n = 10
+Rscript --vanilla LR_lms_lapply.R 1000000 10 15 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_cmp.R 1000000 10 15 | tee /dev/null | ../../../valor/report.py
+cd ..
+```
+Here, the n is the 2nd parameter in the command line. In LogitReg-n, k-Means-nD, and LR-OLS_n, the n values are always the 2nd parameer. You can simplify duplicate the commands used in Section5.3/5.4 evaluation to reprodcue the test.
 
 ### Tiling in Vectorization (Paper Section 5.7)
 
+The current valor package does not contain the feature to automatically generate vectorized code with different tiling size. The tiling experiment was based on manually translated code. Here, LR (1var) is used to show the steps to reproduce the result.
+
+```bash
+cd LR
+echo LR 1M samples, 15 iterations. tile = [1000 2000 5000 10000 20000 50000 100000 200000 500000]
+Rscript --vanilla LR-1var_lms_lapply_mtrans_tiling.R 1000000 15 1000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR-1var_lms_lapply_mtrans_tiling.R 1000000 15 2000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR-1var_lms_lapply_mtrans_tiling.R 1000000 15 5000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR-1var_lms_lapply_mtrans_tiling.R 1000000 15 10000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR-1var_lms_lapply_mtrans_tiling.R 1000000 15 20000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR-1var_lms_lapply_mtrans_tiling.R 1000000 15 50000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR-1var_lms_lapply_mtrans_tiling.R 1000000 15 100000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR-1var_lms_lapply_mtrans_tiling.R 1000000 15 200000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR-1var_lms_lapply_mtrans_tiling.R 1000000 15 500000 | tee /dev/null | ../../../valor/report.py
+echo LR-n 1M samples with n = 10, 15 iterations. tile = [1000 2000 5000 10000 20000 50000 100000 200000 500000]
+Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 1000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 2000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 5000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 10000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 20000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 50000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 100000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 200000 | tee /dev/null | ../../../valor/report.py
+Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 500000 | tee /dev/null | ../../../valor/report.py
+cd ..
+```
 
 ## V. Brief Introduction of the source code of valor package.
 
 ### Valor Package
+
+The source code is under pkg sub-directory, where the structure follows standard R package structure. 
+
+| Filename |  Notes |
+|man\vecapply.Rd| help document used in R ?va_cmpfun command |
+|R\cmputility.R| Valor Compiler utility functions |
+|R\runtime.R| Valor runtime function implementations, such as PERM\_DOWN(), PERM\_UP() implementations|
+|R\vecapply.R| Valor compiler main functions|
+|tests\basics.R| Simple tests of Valor package|
 
 
 ### Benchmarks
