@@ -8,25 +8,26 @@ The artifacts of paper23 include
 * The valor R package, which does the compiler transformation and provides runtime functions to support the execution of the vectorized code.
 * The benchmark application codes, which was used in the paper's performance evaluation.
 
-Section II of this document describes the details steps to install R, the valor R package described in the paper and benchmarks used in the evaluation into a Linux environment. But you can always use the Virtualbox image provided. Section III is the Getting Started Guide, which help the user get familiar with the valor package. The first subseciton of Section IV is also the Getting Started Guide to help uesr praticse basic performance benchmarking. The rest of Section IV is the detail steps to reproduce the paper's evaluation section. Section V is a brief introduction of the valor package's source code.
+Section II of this document describes the detail steps to install R, the valor package and benchmarks into a Linux environment. But you can always use the Virtualbox image provided. Section III is the Getting Started Guide, which help the user get familiar with the valor package. The first subseciton of Section IV is also the Getting Started Guide to help uesr praticse basic performance benchmarking. The rest of Section IV is the detail steps to reproduce the paper's evaluation section. Section V is a brief introduction of the valor package's source code and the benchmarks.
 
 ## II. Installation
 ### Manual Installation
 
-The manual installation guide has been tested in a standard Linux Platform and Cygwin. Other platforms may also support all the steps if they can install GNU-R, GIT and Python(in /usr/bin/python).
+The manual installation guide has been tested in a standard Linux Platform and Cygwin. Other platforms may also support all the steps if they can install GNU-R, GIT and Python.
 
 #### 1. Pre-Requirement
 
-Standard GNU tool chains with gcc/gfortran for installing GNU-R. GIT tool for checking out code and benchmarks. Python for running performance reporting scripts.
+Standard GNU tool chains with gcc/gfortran for installing GNU-R. GIT tool for checking out code and benchmarks. Python at /usr/bin/python for running performance reporting scripts.
 
 #### 2. GNU-R Installation 
 
 ** Linux Platform **
 
-Download GNU-R source code from http://cran.rstudio.com/src/base/R-3/R-3.1.2.tar.gz, unzip it, configuration and make. You may have to install other pre-required software libraries for GNU-R installation. Please follow the instructions in the error log if you meet. The procedure below is just a reference. 
+Download GNU-R source code from http://cran.rstudio.com/src/base/R-3/R-3.1.2.tar.gz, unzip it, configuration and make. You may have to install other pre-required software libraries for GNU-R installation. Please follow the instructions in the error log if you meet problems. The procedure below is just a reference. 
   
 ```bash
-~ $ tar -xzvf http://cran.rstudio.com/src/base/R-3/R-3.1.2.tar.gz
+~ $ wget http://cran.rstudio.com/src/base/R-3/R-3.1.2.tar.gz
+~ $ tar -xzvf R-3.1.2.tar.gz
 ~ $ cd R-3.1.2
 ~/R-3.1.2 $ ./configure
 ~/R-3.1.2 $ make 
@@ -36,7 +37,7 @@ You may have to add some configurations in the configure step, such as `./config
 
 ** Cygwin **
 
-Use Cygwin setup tools to install the latest R binaries, 3.1.2.
+Use Cygwin setup tools to install the latest R binaries, for example 3.1.2.
   
 #### 3. Download and install R Apply vectorizaiton package.
 
@@ -64,12 +65,12 @@ The benchmark code is also open-sourced, and can be downloaded directly from htt
 git clone -b vecapply https://github.com/wanghc78/benchmarks.git
 ```
 
-The benchmark codes are located under _~/paper23/benchmarks/algorithm_. The scripts in the sub-directories were used in the performance evaluation. You can read [https://github.com/rbenchmark/benchmarks/blob/master/docs/writting_benchmark.md] to understand the benchmark code's structure. A detail list or the benchmark scripts is in Section V of this document.
+The benchmark codes are located under _~/paper23/benchmarks/algorithm_. The scripts in the sub-directories were used in the performance evaluation. You can read [https://github.com/rbenchmark/benchmarks/blob/master/docs/writting_benchmark.md] to understand the benchmark code's structure. A detail list of the benchmark scripts is in the Section V of this document.
 
   
 ### Use Virtual Machine
 
-The virtual machine image is a Linux Fedora 16 x86 image with 4G memory as the initial setup. Username/passowrd: oopsla2015/paper23. R, valor package and benchmark codes have been installed in the virtual machine following the previous document. 
+The virtual machine image is a Linux Fedora 16 x86 image with 4G memory as the initial setup. Username/passowrd: oopsla2015/paper23. R, valor package and benchmark codes have been installed in the virtual machine following the previous document. The valor package and benchmarks are stored in paper23 directory under oopsla2015's home directory.
 
 ## III. Simple Translation Examples
 
@@ -110,7 +111,7 @@ By default, the package will report the vectorization's result in the console lo
 
 ## IV. Conducting Performance Evaluation of the Paper
 
-**Note** The performance evaluation results reported in the paper was evaluated in a server with large memory(64G). Because the vectorized code requires more memory (Paper section 3.4), the speedup number in the virtual machine (4G memory default) will be different than the number reported, and the virtual machine cannot run the large data size test, for example 4x and 16x data input. If you used the manual installation in a similar platform as the paper, you can run large input and get the similar result.
+**Note** The performance evaluation results reported in the paper were evaluated in a server with large memory(64G). Because the vectorized code requires more memory (Paper section 3.4), the speedup number in the virtual machine (4G memory default) will be different than the number reported, and the virtual machine cannot run the large data size test, for example 4x and 16x data input. If you used the manual installation in a similar platform as the paper, you can run large input and get the similar result.
 
 ### Evaluation one example (LR-1var)
 
@@ -136,7 +137,7 @@ In the vectorized version, there is one line showing "[INFO]va\_list2vec Time ="
 
 You can append `| grep "Time ="` in the command line to only extract the time info. The time of iteration 6~15 are used to calculate the per-iteration time for LR iterative algorithm. And you can append `| ../../../valor/report.py` in the command line to report the summarized information, like "[Iterative]AvgIterTime = 3.594200 Overhead = 345.345%". The report.py is temporarily stored in the valor package only for the OOPSLA Artificats Evaluation. Please make sure the correct path location of report.py in your command.
 
-***Note***: In cygwin environment, the pipe system for R doesn't work correctly. You may need insert ` | tee /dev/null` before grep or report.py to correct the pipe issue.
+***Note***: In cygwin environment, the pipe system for R may not work correctly. You may need to insert ` | tee /dev/null` before grep or report.py to correct the pipe issue.
  
 
 #### Testing direct algorithm
@@ -151,7 +152,7 @@ Similar to testing iterative algorithm, you can append `| grep "Time ="` or `| .
 
 ### Vectorization Speedup and Overhead Evaluation (Paper Section 5.3/5.4)
 
-Suppose you are in the directory of "~/paper23/benchmarks/algorithm", the following commands could be used to reproduce the time measured in Section 5.3 and 5.4. Please note, the commands may run up to minutes to hours.
+Suppose you are in the directory of "~/paper23/benchmarks/algorithm", the following commands could be used to reproduce the time measured in Section 5.3 and 5.4. Please note, the commands may run up to minutes to hours. You can reduce the input size to reduce the running time.
 
 #### Iterative algorithm
 
@@ -221,13 +222,13 @@ cd Pi
 echo nonVec Monte Carlo 1M points
 Rscript --vanilla Pi_lapply.R 1000000 | ../../../valor/report.py
 echo Vec Monte Carlo 1M points
-Rscript --vanilla Pi_lapply.R 1000000 | ../../../valor/report.py
+Rscript --vanilla Pi_lapply_cmp.R 1000000 | ../../../valor/report.py
 cd ..
 cd PCA
 echo nonVec PCA 1M length 10 vector samples
 Rscript --vanilla PCA_lapply.R 1000000 10 | ../../../valor/report.py
 echo nonVec PCA 1M length 10 vector samples
-Rscript --vanilla PCA_lapply.R 1000000 10 | ../../../valor/report.py
+Rscript --vanilla PCA_lapply_cmp.R 1000000 10 | ../../../valor/report.py
 cd ..
 ```
 
@@ -260,7 +261,9 @@ Rscript --vanilla k-NN_lapply_mtrans.R 10000 10000 10 5 | ../../../valor/report.
 cd ..
 ```
 
-***Note***: The current compiler in valor package doesn't support the two testing schemas transformation. The scripts used in the test are manually generated.    
+The above script is stored as bench_nested.sh
+
+The current compiler in valor package doesn't support the two testing schemas transformation. The scripts used in the test are manually generated.    
 
 ### Vector Programming in applications Evaluation (Paper Section 5.6)
 
@@ -302,6 +305,8 @@ cd ..
 ```
 Here, the n is the 2nd parameter in the command line. In LogitReg-n, k-Means-nD, and LR-OLS_n, the n values are always the 2nd parameer. You can simplify duplicate the commands used in Section5.3/5.4 evaluation to reprodcue the test.
 
+The above script is stored as bench_veclen.sh.
+
 ### Tiling in Vectorization (Paper Section 5.7)
 
 The current valor package does not contain the feature to automatically generate vectorized code with different tiling size. The tiling experiment was based on manually translated code. Here, LR (1var) is used to show the steps to reproduce the result.
@@ -330,6 +335,8 @@ Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 200000 | ../../../
 Rscript --vanilla LR_lms_lapply_mtrans_tiling.R 1000000 10 15 500000 | ../../../valor/report.py
 cd ..
 ```
+
+The above script is stored as bench_tiling.sh
 
 ## V. Brief Introduction of the source code of valor package.
 
