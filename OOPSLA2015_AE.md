@@ -3,7 +3,8 @@
 ## I. Overview
 
 The artifacts of paper23 include
-* This README.md as the installation and performance evaluation guide. The document can also be found at 
+
+* This OOPSLA2015_AE.md as the installation and performance evaluation guide. The document can also be found at https://github.com/wanghc78/valor/blob/master/OOPSLA2015_AE.md 
 * The valor R package, which does the compiler transformation and provides runtime functions to support the execution of the vectorized code.
 * The benchmark application codes, which was used in the paper's performance evaluation.
 
