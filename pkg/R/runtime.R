@@ -77,13 +77,13 @@ va_colRepVecData <- function(data, ref) {
 
 # Transform a vector to a list element. each element in the list is by removing the 1st dim of the vector
 # Will do it recursively
-va_vec2list <- function(v) {
+pva_vec2list <- function(v) {
     if(is.list(v)) {
         v_len <- length(v)
         v_attr <- attributes(v)
         #transform each elements into list
         for(i in 1:v_len){
-            v[[i]] <- va_vec2list(v[[i]])
+            v[[i]] <- pva_vec2list(v[[i]])
         }
         l_len <- length(v[[i]])
         #then compose small one
@@ -118,16 +118,26 @@ va_vec2list <- function(v) {
     }   
 }
 
+va_vec2list <- function (v)
+{
+    ptm <- proc.time()
+    ret <- pva_vec2list(v)
+    cat("[INFO]va_vec2list Time =", (proc.time() - ptm)[[3]],
+            "\n")
+    ret
+}
+
+
 # Transform a list into a vector form. 
 # It also handles transform of a AoS into SoA
-va_list2vec <- function(l) {
+pva_list2vec <- function(l) {
     stopifnot(length(l) > 0)
     e1 <- l[[1]] #pick the first one
     if(is.list(e1)) {
         len_e <- length(e1)
         soa <- list() #the result
         for(i in 1:len_e) {
-            soa[[i]] <- va_list2vec(lapply(l, function(e){e[[i]]}))
+            soa[[i]] <- pva_list2vec(lapply(l, function(e){e[[i]]}))
         }
         attributes(soa) <- attributes(e1)
         return(soa)
@@ -146,6 +156,16 @@ va_list2vec <- function(l) {
         aperm(tmp, c(tmp_dim_len, 1:(tmp_dim_len-1)))
     }
 }
+
+
+va_list2vec <- function (l) {
+    ptm <- proc.time()
+    ret <- pva_list2vec(l)
+    cat("[INFO]va_list2vec Time =", (proc.time() - ptm)[[3]],
+            "\n")
+    ret
+}
+
 
 # Get the nth element in a vector data. We should get the element from the last dim
 # Because the vectorization is always done in the 1st dim
