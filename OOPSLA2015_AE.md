@@ -2,28 +2,31 @@
 
 ## I. Overview
 
-The artifacts of paper23 include
+There are three groups of files containing supporting material for paper23
 
-* This OOPSLA2015_AE.md as the installation and performance evaluation guide. The document can also be found at https://github.com/wanghc78/valor/blob/master/OOPSLA2015_AE.md 
-* The valor R package, which does the compiler transformation and provides runtime functions to support the execution of the vectorized code.
-* The benchmark application codes, which was used in the paper's performance evaluation.
+* This installation and performance evaluation guide (OOPSLA2015_AE.md). This document can also be found at https://github.com/wanghc78/valor/blob/master/OOPSLA2015_AE.md 
+* The valor R package, containing the vectorizing restructurer and the runtime functions needed for execution of the vectorized code.
+* The benchmark codes used in the paper to evaluate the effectiveness of the vectorizer.
 
-Section II of this document describes the detail steps to install R, the valor package and benchmarks into a Linux environment. But you can always use the Virtualbox image provided. Section III is the Getting Started Guide, which help the user get familiar with the valor package. The first subseciton of Section IV is also the Getting Started Guide to help uesr praticse basic performance benchmarking. The rest of Section IV is the detail steps to reproduce the paper's evaluation section. Section V is a brief introduction of the valor package's source code and the benchmarks.
+Section II of this document discuss how to carry out the installations necessary to repeat the experiments presented in the paper. Specifically, it describes how to install R in a Linux environment and how to download the valor R package and the benchmark codes. Alternatively, the Virtualbox image provided can be used. Section III is the Getting Started Guide which prsents useful information on how to use the valor package. Section IV list a series of steps that can be followed to reproduce the paper's evaluation section. Section V is a brief description of the valor package's source code and the benchmarks.
 
 ## II. Installation
+
 ### Manual Installation
 
-The manual installation guide has been tested in a standard Linux Platform and Cygwin. Other platforms may also support all the steps if they can install GNU-R, GIT and Python.
+The following manual installation steps were tested in a standard Linux Platform and Cygwin. Other platforms may also support all the steps if GNU-R, GIT and Python can be installed in them.
 
-#### 1. Pre-Requirement
+#### 1. Prerequisites
 
-Standard GNU tool chains with gcc/gfortran for installing GNU-R. GIT tool for checking out code and benchmarks. Python at /usr/bin/python for running performance reporting scripts.
+* GNU compilers gcc/gfortran for installing GNU-R. 
+* GIT for checking out code and benchmarks. 
+* Python installed at /usr/bin/python for running performance reporting scripts.
 
-#### 2. GNU-R Installation 
+#### 2. Installation of GNU-R 
 
 ** Linux Platform **
 
-Download GNU-R source code from http://cran.rstudio.com/src/base/R-3/R-3.1.2.tar.gz, unzip it, configuration and make. You may have to install other pre-required software libraries for GNU-R installation. Please follow the instructions in the error log if you meet problems. The procedure below is just a reference. 
+Download GNU-R source code from http://cran.rstudio.com/src/base/R-3/R-3.1.2.tar.gz, unzip it, configuration, and make. You may have to install other software modules to complete the GNU-R installation. Please follow the instructions in the error log if there are problems. The procedure below is just a reference. 
   
 ```bash
 ~ $ wget http://cran.rstudio.com/src/base/R-3/R-3.1.2.tar.gz
@@ -41,36 +44,36 @@ Use Cygwin setup tools to install the latest R binaries, for example 3.1.2.
   
 #### 3. Download and install R Apply vectorizaiton package.
 
-Starting from here, all the artifacts of paper23 will be stored in the _paper23_ sub-directory under the current user's home directory, which is _~/paper23_.
+At this point, all the artifacts of paper23 will be stored in the _paper23_ sub-directory under the current user's home directory, which is _~/paper23_.
 
-The R apply vectorization package is open sourced, and can be downloaded directly from https://github.com/wanghc78/valor .
+The R vectorization package is open sourced and can be downloaded from https://github.com/wanghc78/valor .
 
 ```bash
 ~ $ cd paper23
 ~/paper23 $ git clone https://github.com/wanghc78/valor.git
 ```
 
-Then launch R and install the th 
+Then launch R and install the package
 
 ```bash
 ~/paper23 $ R CMD INSTALL valor/pkg
 ```
-If there is no problem, the console will shown _DONE (vecapply)_ in the last line of the installation log.
+If the installation was successful, the console will shown _DONE (vecapply)_ in the last line of the installation log.
 
-#### 4. Download benchmark code.
+#### 4. Download benchmark codes.
 
-The benchmark code is also open-sourced, and can be downloaded directly from https://github.com/wanghc78/benchmarks/tree/vecapply . Please clone the vecapply branch version since this branch contains the benchmark codes for the paper.
+The benchmark code is also open-sourced and can be downloaded from https://github.com/wanghc78/benchmarks/tree/vecapply . Please clone the vecapply branch version since this branch contains the benchmark codes for the paper.
 
 ```bash
 git clone -b vecapply https://github.com/wanghc78/benchmarks.git
 ```
 
-The benchmark codes are located under _~/paper23/benchmarks/algorithm_. The scripts in the sub-directories were used in the performance evaluation. You can read [https://github.com/rbenchmark/benchmarks/blob/master/docs/writting_benchmark.md] to understand the benchmark code's structure. A detail list of the benchmark scripts is in the Section V of this document.
+The benchmark codes are located under _~/paper23/benchmarks/algorithm_. The scripts in the sub-directories are the ones that were used in the performance evaluation. The document https://github.com/rbenchmark/benchmarks/blob/master/docs/writting_benchmark.md describes the structure of the benchmarks. A the benchmark scripts are listed in Section V of this document.
 
   
 ### Use Virtual Machine
 
-The URL pointing the artifact at https://oopsla15aec.hotcrp.com online submission system is the virtualbox image file. The virtual machine image is a Linux Fedora 16 x86 image with 4G memory as the initial setup. Username/passowrd: oopsla2015/paper23. R, valor package and benchmark codes have been installed in the virtual machine following the previous document. The valor package and benchmarks are stored in paper23 directory under oopsla2015's home directory.
+The file URL at https://oopsla15aec.hotcrp.com points to the Virtualbox (https://www.virtualbox.org/) image file. The virtual machine image is a Linux Fedora 16 x86 image. Please create a Fedora x86 Linux system with 4G memory. The linux's Username/passowrd: oopsla2015/paper23. R, valor package and benchmark codes have been installed in the virtual machine following the above document. The valor package and benchmarks are stored in paper23 directory under oopsla2015's home directory.
 
 ## III. Simple Translation Examples
 
@@ -78,10 +81,11 @@ Launch R
 ```bash
 ~/paper23 $ R
 ```
-And in the R console, type `library(vecapply)` to load the package, and `?va_cmpfun` to get the package's help. You can use key "q" to quit the help document. You may following the help document to try some simple transformation.
+And, in the R console, type `library(vecapply)` to load the package, and `?va_cmpfun` to get the package's help. You can use key "q" to quit the help document. The help document contain some simple transformation examples.
 
-### Compile an expression
+### Compile (translate into vector code) an expression
 ```R
+library(vecapply)
 data <- 1:10
 expr <- quote(lapply(data, function(x){x+1})) #get an expression
 vexpr <- va_compile(expr) #vectorize the expression
@@ -89,7 +93,7 @@ vres <- eval(vexpr) #evaluate the vectorized expression
 identical(eval(expr), vres) #check the result
 ```
 
-### Compile a function
+### Compile (translate into vector code) a function
 ```R
 foo <- function() {
     squareFun <- function(x) { x * x }
@@ -101,7 +105,7 @@ vfoo #show the function transformation's result
 vfoo() #evaluate the vector function function
 ```
 
-### Generate the vector version of a function
+### Generate the vector version of a function only
 ```R
 bar <- function(x) { x[1] * x[2]}  #a single object function
 vbar <- va_vecClosure(bar) #the vector version of the single object function
@@ -109,9 +113,9 @@ vbar <- va_vecClosure(bar) #the vector version of the single object function
 
 By default, the package will report the vectorization's result in the console log starting with "WARN:" prompt. 
 
-## IV. Conducting Performance Evaluation of the Paper
+## IV. Reproducing the performance evaluation reported in the paper
 
-**Note** The performance evaluation results reported in the paper were evaluated in a server with large memory(64G). Because the vectorized code requires more memory (Paper section 3.4), the speedup number in the virtual machine (4G memory default) will be different than the number reported, and the virtual machine cannot run the large data size test, for example 4x and 16x data input. If you used the manual installation in a similar platform as the paper, you can run large input and get the similar result.
+**Note** The performance evaluation results reported in the paper were conducted using a server with large memory(64G). Because of the memory requirements of the vectorized code (Paper section 3.4), if the memory is not as large as that used for the evaluation discussed in the paper the speedups that will be obtained with the virtual machine (4G memory default) will be different than the number reported in the paper, and the virtual machine will not be able to run the large data size tests (e.g. 4x and 16x data input). If the installation is done in a platform similar to that used for the paper it will be possible to run large inputs and get similar results as those in the paper.
 
 ### Evaluation one example (LR-1var)
 
