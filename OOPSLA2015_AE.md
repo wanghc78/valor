@@ -24,7 +24,7 @@ The following manual installation steps were tested in a standard Linux Platform
 
 #### 2. Installation of GNU-R 
 
-** Linux Platform **
+**Linux Platform**
 
 Download GNU-R source code from http://cran.rstudio.com/src/base/R-3/R-3.1.2.tar.gz, unzip it, configuration, and make. You may have to install other software modules to complete the GNU-R installation. Please follow the instructions in the error log if there are problems. The procedure below is just a reference. 
   
@@ -38,7 +38,7 @@ Download GNU-R source code from http://cran.rstudio.com/src/base/R-3/R-3.1.2.tar
 
 You may have to add some configurations in the configure step, such as `./configure --with-x=no`. After installation, please set the system path to ensure you can execute `R` and `Rscript` in any directories.
 
-** Cygwin **
+**Cygwin**
 
 Use Cygwin setup tools to install the latest R binaries, for example 3.1.2.
   
